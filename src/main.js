@@ -1,6 +1,7 @@
 import { SpatialScene } from './scene.js';
 import { DemoCompanion } from './demo.js';
 import { RealtimeCompanion } from './realtime.js';
+import { BrowserVoiceDemo } from './voice-demo.js';
 
 const $ = id => document.getElementById(id);
 const messages = $('messages');
@@ -52,6 +53,15 @@ const scene = new SpatialScene($('scene'), {
   onTargetActivated(id) { toast(`Spatial target: ${id}`); },
 });
 
+const browserVoice = new BrowserVoiceDemo({
+  onTranscript: text => sendPrompt(text),
+  onStatus: (status, error) => {
+    setText('transport-state', status);
+    scene.setState(status === 'listening' ? 'listening' : 'idle');
+    if (error) toast(error);
+  },
+});
+
 const demo = new DemoCompanion({
   scene,
   onMessage: addMessage,
@@ -68,7 +78,7 @@ function setMode(nextMode) {
 function liveStatus(status, error) {
   setText('transport-state', status);
   const pill = $('connection-pill');
-  if (status === 'connected' || status === 'listening' || status === 'thinking' || status === 'speaking') {
+  if (['connected','listening','thinking','speaking'].includes(status)) {
     pill.textContent = status;
     pill.classList.remove('muted');
   } else {
@@ -115,6 +125,9 @@ async function sendPrompt(text) {
 }
 
 $('live-button').addEventListener('click', connectLive);
+$('voice-demo-button').addEventListener('click', () => {
+  try { browserVoice.start(); } catch (error) { toast(error.message); }
+});
 $('demo-button').addEventListener('click', () => demo.runGuidedDemo());
 $('send-button').addEventListener('click', () => sendPrompt($('text-input').value));
 $('text-input').addEventListener('keydown', event => {
