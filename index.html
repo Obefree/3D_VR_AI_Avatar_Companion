@@ -1,76 +1,46 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#070b12" />
-    <title>Spatial AI Companion</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
-        }
-      }
-    </script>
-    <script src="./src/app.js" defer></script>
-  </head>
-  <body>
-    <div id="app-shell">
-      <canvas id="scene"></canvas>
-      <div id="crosshair" aria-hidden="true"></div>
-
-      <header class="topbar glass">
-        <div>
-          <div class="eyebrow">SPATIAL AI COMPANION</div>
-          <h1>Embodied realtime AI for games, VR and AR</h1>
-        </div>
-        <div class="status-row">
-          <span id="mode-pill" class="pill">Demo mode</span>
-          <span id="connection-pill" class="pill muted">Offline</span>
-        </div>
-      </header>
-
-      <section class="controls glass">
-        <div class="button-row">
-          <button id="live-button" class="primary" type="button">Connect Live AI</button>
-          <button id="voice-demo-button" type="button">Talk to Nova</button>
-          <button id="demo-button" type="button">Run guided demo</button>
-          <button id="xr-button" class="hidden" type="button">Enter XR</button>
-        </div>
-        <p class="hint">
-          Type a message or use Talk to Nova. The controls keep working even if the 3D scene cannot load. Live AI requires the secure OpenAI backend on the deployed host.
-        </p>
-        <div class="prompt-row">
-          <input id="text-input" type="text" autocomplete="off" placeholder="Try: Show me the red button" />
-          <button id="send-button" type="button">Send</button>
-        </div>
-        <div class="quick-prompts">
-          <button type="button" data-prompt="What am I looking at?">What am I looking at?</button>
-          <button type="button" data-prompt="Show me the red button">Show me the red button</button>
-          <button type="button" data-prompt="What should I do next?">What should I do next?</button>
-        </div>
-      </section>
-
-      <aside class="dev-panel glass">
-        <div class="panel-title">Agent state</div>
-        <dl>
-          <div><dt>State</dt><dd id="agent-state">idle</dd></div>
-          <div><dt>Focus</dt><dd id="focus-target">none</dd></div>
-          <div><dt>Visible</dt><dd id="visible-targets">device, red_button, filter</dd></div>
-          <div><dt>Last tool</dt><dd id="last-tool">—</dd></div>
-          <div><dt>Transport</dt><dd id="transport-state">starting</dd></div>
-        </dl>
-      </aside>
-
-      <section class="transcript glass" aria-live="polite">
-        <div class="panel-title">Conversation</div>
-        <div id="messages"></div>
-      </section>
-
-      <div id="toast" role="status"></div>
-      <audio id="remote-audio" autoplay></audio>
-    </div>
-  </body>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Spatial AI Companion — Functional Demo</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#eef8ff;background:#07111d}*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden}button,input{font:inherit}button{touch-action:manipulation;cursor:pointer}.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 380px;background:#07111d}.world{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 35%,#1b3a5f 0,#0c1b2d 42%,#07111d 75%)}.grid{position:absolute;inset:0;opacity:.14;background-image:linear-gradient(#7bdcff 1px,transparent 1px),linear-gradient(90deg,#7bdcff 1px,transparent 1px);background-size:48px 48px;transform:perspective(500px) rotateX(60deg) scale(1.5);transform-origin:center bottom;top:46%}.title{position:absolute;z-index:5;left:18px;top:16px}.eyebrow{font-size:11px;letter-spacing:.18em;color:#82dcff;font-weight:800}.title h1{font-size:clamp(18px,2.2vw,30px);margin:5px 0 0}.status-chip{display:inline-block;margin-top:10px;padding:6px 10px;border-radius:999px;background:#112c42;border:1px solid #235574;color:#9de8ff;font-size:12px}.bot{position:absolute;left:30%;top:50%;width:130px;height:190px;transform:translate(-50%,-50%);transition:left .7s ease,top .7s ease;animation:hover 2.6s ease-in-out infinite}.bot .head{position:absolute;left:24px;top:0;width:84px;height:68px;border-radius:42% 42% 36% 36%;background:linear-gradient(#365e7d,#20384f);box-shadow:0 15px 50px #0008}.face{position:absolute;left:12px;right:12px;top:22px;height:25px;border-radius:12px;background:#07131e}.eye{position:absolute;top:8px;width:10px;height:10px;border-radius:50%;background:#91efff;box-shadow:0 0 15px #52dfff}.eye.l{left:16px}.eye.r{right:16px}.mouth{position:absolute;left:50%;top:17px;width:18px;height:2px;transform:translateX(-50%);border-radius:2px;background:#6ce7ff}.bot.speaking .mouth{animation:talk .22s linear infinite alternate}.body{position:absolute;left:16px;top:78px;width:100px;height:88px;border-radius:45px 45px 30px 30px;background:linear-gradient(145deg,#2d526f,#172d42);border:1px solid #49728e}.core{position:absolute;left:39px;top:105px;width:54px;height:32px;border:4px solid #6de5ff;border-radius:50%;box-shadow:0 0 20px #2ccfff55}.arm{position:absolute;left:104px;top:102px;width:88px;height:10px;border-radius:9px;background:#5bdcf2;transform-origin:0 50%;opacity:.25;transition:.25s}.bot.pointing .arm{opacity:1;transform:rotate(-17deg);box-shadow:0 0 18px #41dfff}.device{position:absolute;right:13%;top:48%;width:175px;height:190px;transform:translateY(-50%);border-radius:22px;background:linear-gradient(145deg,#394757,#202a36);border:1px solid #63768a;box-shadow:0 25px 60px #0008}.screen{position:absolute;left:20px;top:28px;width:95px;height:52px;border-radius:8px;background:#0e2436;box-shadow:inset 0 0 20px #38bfff44}.red{position:absolute;right:22px;top:42px;width:31px;height:31px;border-radius:50%;background:#d73850;border:4px solid #741a2a;transition:.2s}.red.hot{box-shadow:0 0 36px 15px #ff4266;transform:scale(1.12)}.filter{position:absolute;left:38px;bottom:29px;width:98px;height:35px;border-radius:18px;background:linear-gradient(90deg,#8c9cac,#536171);transition:.2s}.filter.hot{box-shadow:0 0 34px 12px #62dfff;transform:scale(1.08)}.panel{min-width:0;padding:20px;background:#0b1725;border-left:1px solid #20364b;display:flex;flex-direction:column;gap:12px;z-index:10}.panel h2{font-size:18px;margin:0}.mode{font-size:12px;color:#8edfff}.messages{flex:1;min-height:140px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}.m{padding:10px 11px;border-radius:12px;background:#14263a;font-size:13px;line-height:1.42}.m.user{margin-left:26px;background:#243f72}.m .who{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#7894ab;margin-bottom:3px}.quick{display:flex;flex-wrap:wrap;gap:7px}.quick button,.actions button,.send button{border:1px solid #2e526f;background:#142b41;color:#eaf8ff;border-radius:10px;padding:10px 11px}.quick button{font-size:11px}.quick button:active,.actions button:active,.send button:active{background:#245176}.send{display:flex;gap:8px}.send input{min-width:0;flex:1;border:1px solid #2b465f;background:#07111d;color:#fff;border-radius:10px;padding:11px}.send button{background:#197ab4}.actions{display:flex;gap:8px}.actions button{flex:1}.note{font-size:11px;line-height:1.4;color:#8396a8}.hidden{display:none!important}@keyframes hover{50%{margin-top:-10px}}@keyframes talk{to{height:7px;top:14px}}@media(max-width:820px){html,body{overflow:auto}.app{height:auto;min-height:100%;grid-template-columns:1fr;grid-template-rows:42vh minmax(58vh,auto)}.panel{border-left:0;border-top:1px solid #20364b;padding:14px}.title{left:12px;top:10px}.device{right:7%;transform:translateY(-50%) scale(.72)}.bot{left:25%;transform:translate(-50%,-50%) scale(.8)}.messages{min-height:170px;max-height:31vh}.quick{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="world">
+    <div class="grid"></div>
+    <div class="title"><div class="eyebrow">SPATIAL AI COMPANION</div><h1>Functional browser prototype</h1><span id="worldStatus" class="status-chip">Demo engine ready</span></div>
+    <div id="bot" class="bot"><div class="head"><div class="face"><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></div></div><div class="body"></div><div class="core"></div><div class="arm"></div></div>
+    <div class="device"><div class="screen"></div><div id="red" class="red"></div><div id="filter" class="filter"></div></div>
+  </section>
+  <aside class="panel">
+    <h2>Nova</h2>
+    <div id="mode" class="mode">Local spatial demo • no backend required</div>
+    <div id="messages" class="messages" aria-live="polite"></div>
+    <div class="quick"><button data-q="Show me the red button">Show red button</button><button data-q="What should I do next?">What next?</button><button data-q="Can you help me fix this device?">Help me</button><button data-q="What am I looking at?">What is this?</button></div>
+    <div class="send"><input id="input" autocomplete="off" placeholder="Ask Nova, e.g. Show me the red button"><button id="send" type="button">Send</button></div>
+    <div class="actions"><button id="talk" type="button">Talk to Nova</button><button id="guided" type="button">Run guided demo</button></div>
+    <div class="note">This public build is deliberately self-contained: buttons, typed requests, voice input (where supported), spoken replies and spatial actions work without external JavaScript. A secure server is still required for a real LLM connection.</div>
+  </aside>
+</div>
+<script>
+(()=>{
+const $=id=>document.getElementById(id),messages=$('messages'),bot=$('bot'),red=$('red'),filter=$('filter'),worldStatus=$('worldStatus');let busy=false;
+function add(role,text){const el=document.createElement('div');el.className='m '+role;const who=document.createElement('span');who.className='who';who.textContent=role==='user'?'You':'Nova';const body=document.createElement('span');body.textContent=text;el.append(who,body);messages.appendChild(el);messages.scrollTop=messages.scrollHeight}
+function state(s){worldStatus.textContent=s;bot.classList.toggle('speaking',s==='Speaking…')}
+function speak(text){if(!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=1.04;u.pitch=1.05;u.onstart=()=>state('Speaking…');u.onend=()=>state('Demo engine ready');speechSynthesis.speak(u)}catch(e){console.warn(e)}}
+function clearSpatial(){red.classList.remove('hot');filter.classList.remove('hot');bot.classList.remove('pointing');bot.style.left='30%';bot.style.top='50%'}
+function spatial(text){clearSpatial();const s=text.toLowerCase();if(s.includes('red')||s.includes('button')||s.includes('кноп')){red.classList.add('hot');bot.classList.add('pointing');return 'red'}if(s.includes('next')||s.includes('filter')||s.includes('фильтр')||s.includes('дальш')){filter.classList.add('hot');bot.classList.add('pointing');return 'filter'}if(s.includes('help')||s.includes('fix')||s.includes('repair')||s.includes('помог')){bot.style.left='51%';return 'device'}return 'device'}
+function answer(text){const s=text.toLowerCase(),target=spatial(text);if(s.includes('red')||s.includes('button')||s.includes('кноп'))return 'The red control on the right is the reset button. Start with this one.';if(s.includes('next')||s.includes('filter')||s.includes('фильтр')||s.includes('дальш'))return 'Next, remove the cylindrical filter below the front panel.';if(s.includes('help')||s.includes('fix')||s.includes('repair')||s.includes('помог'))return 'Sure. I will guide you step by step. First, use the red reset button; after that, check the filter.';if(s.includes('what')||s.includes('this')||s.includes('looking')||s.includes('это')||s.includes('смотр'))return target==='filter'?'You are looking at the replaceable filter.':'You are looking at the service device. I can point to the reset control or guide you through the task.';if(s.includes('hello')||s.includes('hi')||s.includes('привет'))return 'Hi. I am Nova. Ask me to show you the reset button or guide you through the device.';return 'I can handle the spatial demo right now. Try “Show me the red button”, “What should I do next?”, or “Help me fix this device”.'}
+async function send(text){text=String(text||'').trim();if(!text||busy)return;busy=true;$('input').value='';add('user',text);state('Thinking…');await new Promise(r=>setTimeout(r,180));const reply=answer(text);add('assistant',reply);speak(reply);busy=false}
+$('send').addEventListener('click',()=>send($('input').value));$('input').addEventListener('keydown',e=>{if(e.key==='Enter')send(e.currentTarget.value)});document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>send(b.dataset.q)));
+$('guided').addEventListener('click',async()=>{if(busy)return;busy=true;clearSpatial();add('assistant','Hi. I am Nova. I can combine conversation with spatial actions.');speak('Hi. I am Nova. I can combine conversation with spatial actions.');await new Promise(r=>setTimeout(r,800));add('user','Show me what I should touch first.');red.classList.add('hot');bot.classList.add('pointing');await new Promise(r=>setTimeout(r,300));add('assistant','Start with the red reset button on the right.');speak('Start with the red reset button on the right.');busy=false});
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(SR){const rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.continuous=false;rec.onstart=()=>{$('talk').textContent='Listening…';state('Listening…')};rec.onresult=e=>{const t=e.results&&e.results[0]&&e.results[0][0]&&e.results[0][0].transcript;if(t)send(t)};rec.onerror=e=>{add('assistant','Voice input error: '+e.error+'. You can still type a request.')};rec.onend=()=>{$('talk').textContent='Talk to Nova';if(!busy)state('Demo engine ready')};$('talk').addEventListener('click',()=>{try{rec.start()}catch(e){}})}else{$('talk').addEventListener('click',()=>add('assistant','Voice recognition is not supported in this browser. Type a request instead.'))}
+add('assistant','Hi. I am Nova. The functional demo is ready — try one of the buttons or type a request.');
+})();
+</script>
+</body>
 </html>
