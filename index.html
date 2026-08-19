@@ -14,6 +14,7 @@
         }
       }
     </script>
+    <script src="./src/app.js" defer></script>
   </head>
   <body>
     <div id="app-shell">
@@ -33,22 +34,22 @@
 
       <section class="controls glass">
         <div class="button-row">
-          <button id="live-button" class="primary">Connect Live AI</button>
-          <button id="voice-demo-button">Talk to Nova</button>
-          <button id="demo-button">Run guided demo</button>
-          <button id="xr-button" class="hidden">Enter XR</button>
+          <button id="live-button" class="primary" type="button">Connect Live AI</button>
+          <button id="voice-demo-button" type="button">Talk to Nova</button>
+          <button id="demo-button" type="button">Run guided demo</button>
+          <button id="xr-button" class="hidden" type="button">Enter XR</button>
         </div>
         <p class="hint">
-          Look at an object using the center reticle, then ask Nova about it. “Talk to Nova” works without an API key in supported browsers; Live AI uses OpenAI Realtime.
+          Type a message or use Talk to Nova. The controls keep working even if the 3D scene cannot load. Live AI requires the secure OpenAI backend on the deployed host.
         </p>
         <div class="prompt-row">
           <input id="text-input" type="text" autocomplete="off" placeholder="Try: Show me the red button" />
-          <button id="send-button">Send</button>
+          <button id="send-button" type="button">Send</button>
         </div>
         <div class="quick-prompts">
-          <button data-prompt="What am I looking at?">What am I looking at?</button>
-          <button data-prompt="Show me the red button">Show me the red button</button>
-          <button data-prompt="What should I do next?">What should I do next?</button>
+          <button type="button" data-prompt="What am I looking at?">What am I looking at?</button>
+          <button type="button" data-prompt="Show me the red button">Show me the red button</button>
+          <button type="button" data-prompt="What should I do next?">What should I do next?</button>
         </div>
       </section>
 
@@ -59,7 +60,7 @@
           <div><dt>Focus</dt><dd id="focus-target">none</dd></div>
           <div><dt>Visible</dt><dd id="visible-targets">device, red_button, filter</dd></div>
           <div><dt>Last tool</dt><dd id="last-tool">—</dd></div>
-          <div><dt>Transport</dt><dd id="transport-state">demo</dd></div>
+          <div><dt>Transport</dt><dd id="transport-state">starting</dd></div>
         </dl>
       </aside>
 
@@ -71,7 +72,5 @@
       <div id="toast" role="status"></div>
       <audio id="remote-audio" autoplay></audio>
     </div>
-
-    <script type="module" src="./src/main.js"></script>
   </body>
 </html>
