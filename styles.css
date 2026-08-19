@@ -6,13 +6,22 @@
 }
 
 * { box-sizing: border-box; }
-html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+html, body { width: 100%; height: 100%; min-height: 100svh; margin: 0; overflow: hidden; }
 body { background: radial-gradient(circle at top, #132034 0%, #070b12 55%, #040609 100%); }
 button, input { font: inherit; }
 button { cursor: pointer; touch-action: manipulation; }
 
-#app-shell { position: relative; width: 100%; height: 100%; }
-#scene { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; }
+#app-shell { position: relative; width: 100%; height: 100dvh; min-height: 100svh; overflow: hidden; }
+#scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: auto;
+  touch-action: none;
+}
 
 .glass {
   background: rgba(10, 16, 27, 0.72);
@@ -157,36 +166,49 @@ dd { margin: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; whi
 @media (max-width: 920px) {
   .dev-panel { display: none; }
   .controls {
+    position: fixed;
     left: 10px;
     right: 10px;
-    bottom: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     width: auto;
+    max-height: 44dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   .transcript {
     display: block;
     left: 10px;
     right: 10px;
-    top: 106px;
+    top: calc(106px + env(safe-area-inset-top, 0px));
     bottom: auto;
     width: auto;
-    max-height: 28vh;
+    max-height: 26dvh;
     padding: 11px;
   }
-  #messages { max-height: calc(28vh - 42px); }
+  #messages { max-height: calc(26dvh - 42px); }
   .message { font-size: 11px; }
 }
 
 @media (max-width: 560px) {
-  .topbar { left: 10px; right: 10px; top: 10px; padding: 13px; min-height: auto; }
+  .topbar {
+    left: 10px;
+    right: 10px;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    padding: 13px;
+    min-height: auto;
+  }
   .topbar h1 { font-size: 16px; }
   .eyebrow { font-size: 9px; }
   .status-row { display: none; }
-  .transcript { top: 86px; max-height: 24vh; }
-  #messages { max-height: calc(24vh - 38px); }
+  .transcript { top: calc(86px + env(safe-area-inset-top, 0px)); max-height: 21dvh; }
+  #messages { max-height: calc(21dvh - 38px); }
   .quick-prompts { display: none; }
-  .controls { padding: 12px; }
+  .controls { padding: 10px; max-height: 42dvh; }
   .button-row { gap: 6px; }
-  button { padding: 9px 10px; min-height: 38px; }
-  .hint { margin: 8px 1px; font-size: 11px; }
-  #toast { top: 72px; border-radius: 14px; }
+  button { padding: 8px 9px; min-height: 38px; font-size: 12px; }
+  .hint { display: none; }
+  .prompt-row { margin-top: 7px; }
+  .prompt-row input { padding: 9px 10px; }
+  #toast { top: calc(72px + env(safe-area-inset-top, 0px)); border-radius: 14px; }
 }
