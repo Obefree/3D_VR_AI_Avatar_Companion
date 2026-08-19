@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b12" />
+    <title>Spatial AI Companion</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app-shell">
+      <canvas id="scene"></canvas>
+      <div id="crosshair" aria-hidden="true"></div>
+
+      <header class="topbar glass">
+        <div>
+          <div class="eyebrow">SPATIAL AI COMPANION</div>
+          <h1>Embodied realtime AI for games, VR and AR</h1>
+        </div>
+        <div class="status-row">
+          <span id="mode-pill" class="pill">Demo mode</span>
+          <span id="connection-pill" class="pill muted">Offline</span>
+        </div>
+      </header>
+
+      <section class="controls glass">
+        <div class="button-row">
+          <button id="live-button" class="primary">Connect Live AI</button>
+          <button id="demo-button">Run guided demo</button>
+          <button id="xr-button" class="hidden">Enter XR</button>
+        </div>
+        <p class="hint">
+          Look at an object using the center reticle, then ask the companion about it. Live mode uses your microphone.
+        </p>
+        <div class="prompt-row">
+          <input id="text-input" type="text" autocomplete="off" placeholder="Try: Show me the red button" />
+          <button id="send-button">Send</button>
+        </div>
+        <div class="quick-prompts">
+          <button data-prompt="What am I looking at?">What am I looking at?</button>
+          <button data-prompt="Show me the red button">Show me the red button</button>
+          <button data-prompt="What should I do next?">What should I do next?</button>
+        </div>
+      </section>
+
+      <aside class="dev-panel glass">
+        <div class="panel-title">Agent state</div>
+        <dl>
+          <div><dt>State</dt><dd id="agent-state">idle</dd></div>
+          <div><dt>Focus</dt><dd id="focus-target">none</dd></div>
+          <div><dt>Visible</dt><dd id="visible-targets">device, red_button, filter</dd></div>
+          <div><dt>Last tool</dt><dd id="last-tool">—</dd></div>
+          <div><dt>Transport</dt><dd id="transport-state">demo</dd></div>
+        </dl>
+      </aside>
+
+      <section class="transcript glass" aria-live="polite">
+        <div class="panel-title">Conversation</div>
+        <div id="messages"></div>
+      </section>
+
+      <div id="toast" role="status"></div>
+      <audio id="remote-audio" autoplay></audio>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
