@@ -23,17 +23,28 @@ function tool(name, description, properties, required) {
   };
 }
 
+function readSdp(req) {
+  if (typeof req.body === 'string') {
+    const trimmed = req.body.trim();
+    if (trimmed.startsWith('{')) {
+      try { return JSON.parse(trimmed).sdp || ''; } catch { return ''; }
+    }
+    return trimmed;
+  }
+  if (Buffer.isBuffer(req.body)) return req.body.toString('utf8').trim();
+  return req.body?.sdp || '';
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
   if (!process.env.OPENAI_API_KEY) return res.status(503).send('OPENAI_API_KEY is not configured on this deployment.');
 
-  const { sdp } = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  if (!sdp) return res.status(400).send('Missing SDP offer.');
+  const sdp = readSdp(req);
+  if (!sdp || !sdp.includes('v=0')) return res.status(400).send('Missing or invalid SDP offer.');
 
   const session = {
     type: 'realtime',
     model: 'gpt-realtime-2.1',
-    output_modalities: ['audio'],
     instructions: 'You are Nova, a concise embodied spatial AI companion. Use scene context supplied by the client. Never invent target IDs. Use spatial tools when the user asks where something is, asks you to show an object, or requests guidance. Keep spoken answers short.',
     audio: {
       input: {
@@ -53,16 +64,25 @@ export default async function handler(req, res) {
 
     const response = await fetch('https://api.openai.com/v1/realtime/calls', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'OpenAI-Safety-Identifier': 'spatial-ai-companion-demo',
+      },
       body: form,
     });
 
     const body = await response.text();
-    res.status(response.status);
-    res.setHeader('Content-Type', response.headers.get('content-type') || 'application/sdp');
+    if (!response.ok) {
+      console.error('OpenAI Realtime session error:', response.status, body);
+      return res.status(response.status).send(body || 'OpenAI Realtime session failed.');
+    }
+
+    res.status(200);
+    res.setHeader('Content-Type', 'application/sdp');
+    res.setHeader('Cache-Control', 'no-store');
     return res.send(body);
   } catch (error) {
-    console.error(error);
-    return res.status(500).send('Failed to create realtime session.');
+    console.error('Failed to create Realtime session:', error);
+    return res.status(500).send(`Failed to create realtime session: ${error.message}`);
   }
 }
