@@ -38,9 +38,7 @@
           <button id="demo-button" type="button">Run guided demo</button>
           <button id="xr-button" class="hidden" type="button">Enter XR</button>
         </div>
-        <p class="hint">
-          Type a message or use Talk to Nova. Live AI requires a secure backend; demo controls work independently.
-        </p>
+        <p class="hint">Type a message or use Talk to Nova. Live AI requires a secure backend; demo controls work independently.</p>
         <div class="prompt-row">
           <input id="text-input" type="text" autocomplete="off" placeholder="Try: Show me the red button" />
           <button id="send-button" type="button">Send</button>
@@ -72,6 +70,16 @@
       <audio id="remote-audio" autoplay></audio>
     </div>
 
+    <script>
+      // Mobile webviews sometimes fail to synthesize a click after touchend.
+      // Bridge touch directly to the existing click handlers without changing UI.
+      document.addEventListener('touchend', function (event) {
+        var button = event.target && event.target.closest ? event.target.closest('button') : null;
+        if (!button || button.disabled) return;
+        event.preventDefault();
+        button.click();
+      }, { passive: false });
+    </script>
     <script src="./src/app.js"></script>
   </body>
 </html>
