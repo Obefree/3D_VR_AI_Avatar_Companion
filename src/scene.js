@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const TARGET_PRIORITY = ['red_button', 'filter', 'device'];
+
 export class SpatialScene {
   constructor(canvas, callbacks = {}) {
     this.canvas = canvas;
@@ -42,6 +44,12 @@ export class SpatialScene {
     this.lastFocusCheck = 0;
     this.highlightTimeouts = new Map();
     this.isXR = false;
+
+    this.deviceState = {
+      resetPressed: false,
+      filterRemoved: false,
+      lastActivatedTarget: null,
+    };
 
     this.#buildLighting();
     this.#buildEnvironment();
@@ -104,6 +112,7 @@ export class SpatialScene {
   #buildAvatar() {
     this.avatar = new THREE.Group();
     this.avatar.position.set(-1.35, 0, -0.1);
+    this.avatarHome = this.avatar.position.clone();
     this.scene.add(this.avatar);
 
     const bodyMat = this.#material(0x263e57, { metalness: 0.62, roughness: 0.28 });
@@ -193,9 +202,9 @@ export class SpatialScene {
   }
 
   #buildDevice() {
-    const device = new THREE.Group();
-    device.position.set(1.35, 0.25, -0.2);
-    this.scene.add(device);
+    this.device = new THREE.Group();
+    this.device.position.set(1.35, 0.25, -0.2);
+    this.scene.add(this.device);
 
     const shellMat = this.#material(0x303845, { metalness: 0.48, roughness: 0.32 });
     const panelMat = this.#material(0x0d151e, { metalness: 0.55, roughness: 0.25 });
@@ -206,69 +215,109 @@ export class SpatialScene {
     shell.position.y = 0.63;
     shell.castShadow = true;
     shell.receiveShadow = true;
-    device.add(shell);
+    this.device.add(shell);
 
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.48, 0.045), panelMat);
     panel.position.set(0, 0.79, 0.385);
-    device.add(panel);
+    this.device.add(panel);
 
-    const screen = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.42, 0.18),
-      this.#material(0x17334c, { emissive: 0x1f84bd, emissiveIntensity: 0.7 }),
+    this.screenMaterial = this.#material(0x17334c, {
+      emissive: 0x1f84bd,
+      emissiveIntensity: 0.7,
+    });
+    this.screen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.18), this.screenMaterial);
+    this.screen.position.set(-0.11, 0.85, 0.411);
+    this.device.add(this.screen);
+
+    this.redBezel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.115, 0.125, 0.03, 24),
+      panelMat,
     );
-    screen.position.set(-0.11, 0.85, 0.411);
-    device.add(screen);
+    this.redBezel.rotation.x = Math.PI / 2;
+    this.redBezel.position.set(0.31, 0.74, 0.402);
+    this.device.add(this.redBezel);
 
-    const redButton = new THREE.Mesh(
+    this.redButton = new THREE.Mesh(
       new THREE.CylinderGeometry(0.085, 0.085, 0.06, 24),
       redMat,
     );
-    redButton.rotation.x = Math.PI / 2;
-    redButton.position.set(0.31, 0.74, 0.425);
-    device.add(redButton);
+    this.redButton.rotation.x = Math.PI / 2;
+    this.redButton.position.set(0.31, 0.74, 0.425);
+    this.redButtonRestZ = this.redButton.position.z;
+    this.device.add(this.redButton);
 
-    const filter = new THREE.Mesh(
+    const redHit = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 16, 12),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    redHit.position.set(0.31, 0.74, 0.42);
+    this.device.add(redHit);
+
+    this.filter = new THREE.Mesh(
       new THREE.CylinderGeometry(0.18, 0.18, 0.42, 32),
       filterMat,
     );
-    filter.rotation.z = Math.PI / 2;
-    filter.position.set(0.1, 0.28, 0.44);
-    device.add(filter);
+    this.filter.rotation.z = Math.PI / 2;
+    this.filter.position.set(0.1, 0.28, 0.44);
+    this.filterRestPosition = this.filter.position.clone();
+    this.device.add(this.filter);
+
+    const filterHit = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.24, 0.5, 16),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    filterHit.rotation.z = Math.PI / 2;
+    filterHit.position.copy(this.filter.position);
+    this.device.add(filterHit);
+    this.filterHit = filterHit;
 
     this.#registerTarget(
       'device',
       'Service device',
       shell,
-      device.position.clone().add(new THREE.Vector3(0, 0.7, 0)),
+      this.device.position.clone().add(new THREE.Vector3(0, 0.7, 0)),
       shellMat,
+      { pickMeshes: [shell, panel, this.screen], noRecolor: true },
     );
     this.#registerTarget(
       'red_button',
       'Red reset button',
-      redButton,
-      device.position.clone().add(redButton.position),
+      this.redButton,
+      this.device.position.clone().add(this.redButton.position),
       redMat,
+      { pickMeshes: [this.redButton, this.redBezel, redHit] },
     );
     this.#registerTarget(
       'filter',
       'Replaceable filter',
-      filter,
-      device.position.clone().add(filter.position),
+      this.filter,
+      this.device.position.clone().add(this.filter.position),
       filterMat,
+      { pickMeshes: [this.filter, filterHit] },
     );
   }
 
-  #registerTarget(id, label, mesh, position, material) {
+  #registerTarget(id, label, mesh, position, material, options = {}) {
     mesh.userData.targetId = id;
+    const pickMeshes = options.pickMeshes ?? [mesh];
+    for (const pickMesh of pickMeshes) pickMesh.userData.targetId = id;
     this.targets.set(id, {
       id,
       label,
       mesh,
       position,
       material,
+      pickMeshes,
+      noRecolor: Boolean(options.noRecolor),
       originalEmissive: material.emissive?.clone?.() ?? new THREE.Color(0),
       originalIntensity: material.emissiveIntensity ?? 0,
     });
+  }
+
+  #allPickMeshes() {
+    const meshes = [];
+    for (const target of this.targets.values()) meshes.push(...target.pickMeshes);
+    return meshes;
   }
 
   #wireEvents() {
@@ -279,6 +328,9 @@ export class SpatialScene {
     this.canvas.addEventListener('pointerdown', (event) => {
       down = { x: event.clientX, y: event.clientY, id: event.pointerId };
     });
+    this.canvas.addEventListener('pointercancel', () => {
+      down = null;
+    });
     this.canvas.addEventListener('pointerup', (event) => {
       if (!down || down.id !== event.pointerId) return;
       const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
@@ -286,24 +338,59 @@ export class SpatialScene {
       if (moved > 10) return;
       const id = this.#pickAt(event.clientX, event.clientY);
       if (!id) return;
-      this.focusId = id;
-      this.callbacks.onFocusChanged?.(id, this.getSceneContext());
-      this.callbacks.onTargetActivated?.(id);
-      this.highlight(id, 1.4);
+      void this.activateTarget(id, 'tap');
     });
+  }
+
+  async activateTarget(id, source = 'tap') {
+    if (!this.targets.has(id)) return { ok: false, error: 'unknown_target', targetId: id };
+
+    this.focusId = id;
+    this.deviceState.lastActivatedTarget = id;
+    this.callbacks.onFocusChanged?.(id, this.getSceneContext());
+
+    let result;
+    if (id === 'red_button') {
+      result = await this.executeTool('press_button', { targetId: 'red_button', source });
+    } else if (id === 'filter') {
+      result = await this.executeTool('remove_filter', { targetId: 'filter', source });
+    } else {
+      result = { ok: true, action: 'select', targetId: id };
+    }
+
+    this.callbacks.onTargetActivated?.(id, result, this.getSceneContext());
+    return result;
   }
 
   #pickAt(clientX, clientY) {
     const rect = this.canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
-    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = this.raycaster.intersectObjects(
-      [...this.targets.values()].map((target) => target.mesh),
-      false,
-    )[0];
-    return hit?.object?.userData?.targetId ?? null;
+
+    const meshes = this.#allPickMeshes();
+    const found = new Set();
+    const radius = Math.max(12, Math.min(rect.width, rect.height) * 0.03);
+    const samples = [[0, 0]];
+
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (i / 8) * Math.PI * 2;
+      samples.push([Math.cos(angle) * radius, Math.sin(angle) * radius]);
+      samples.push([Math.cos(angle) * radius * 0.5, Math.sin(angle) * radius * 0.5]);
+    }
+
+    for (const [dx, dy] of samples) {
+      this.pointer.x = ((clientX + dx - rect.left) / rect.width) * 2 - 1;
+      this.pointer.y = -((clientY + dy - rect.top) / rect.height) * 2 + 1;
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+      this.raycaster.far = 8;
+
+      for (const hit of this.raycaster.intersectObjects(meshes, false)) {
+        const id = hit.object?.userData?.targetId;
+        if (id) found.add(id);
+      }
+      if (found.has('red_button')) return 'red_button';
+    }
+
+    return TARGET_PRIORITY.find((id) => found.has(id)) ?? null;
   }
 
   #resize() {
@@ -389,15 +476,18 @@ export class SpatialScene {
 
     this.raycaster.set(origin, direction);
     this.raycaster.far = 8;
-    const hit = this.raycaster.intersectObjects(
-      [...this.targets.values()].map((target) => target.mesh),
-      false,
-    )[0];
+    const hit = this.raycaster.intersectObjects(this.#allPickMeshes(), false)[0];
     const nextId = hit?.object?.userData?.targetId ?? null;
     if (nextId !== this.focusId) {
       this.focusId = nextId;
       this.callbacks.onFocusChanged?.(nextId, this.getSceneContext());
     }
+  }
+
+  #taskStep() {
+    if (this.deviceState.filterRemoved) return 'complete';
+    if (this.deviceState.resetPressed) return 'filter_required';
+    return 'reset_required';
   }
 
   getViewerWorldPosition() {
@@ -416,7 +506,12 @@ export class SpatialScene {
         label: target.label,
         distance: Number(viewer.distanceTo(target.position).toFixed(2)),
       })),
-      task: { name: 'service_device', step: 'identify_reset_control' },
+      task: { name: 'service_device', step: this.#taskStep() },
+      deviceState: {
+        resetPressed: this.deviceState.resetPressed,
+        filterRemoved: this.deviceState.filterRemoved,
+        lastActivatedTarget: this.deviceState.lastActivatedTarget,
+      },
     };
   }
 
@@ -428,17 +523,19 @@ export class SpatialScene {
   async executeTool(name, args = {}) {
     const id = args.targetId;
     if (id && !this.targets.has(id)) {
-      return { ok: false, error: `Unknown targetId: ${id}` };
+      return { ok: false, error: 'unknown_target', targetId: id };
     }
     this.callbacks.onTool?.(name, args);
 
     switch (name) {
       case 'look_at':
+        if (!id) return { ok: false, error: 'target_required' };
         this.lookTarget = id;
         this.setState('looking');
         setTimeout(() => this.setState('idle'), 900);
-        return { ok: true, targetId: id };
+        return { ok: true, action: name, targetId: id };
       case 'point_at':
+        if (!id) return { ok: false, error: 'target_required' };
         this.lookTarget = id;
         this.pointTarget = id;
         this.setState('pointing');
@@ -446,25 +543,38 @@ export class SpatialScene {
           this.pointTarget = null;
           this.setState('idle');
         }, 2800);
-        return { ok: true, targetId: id };
+        return { ok: true, action: name, targetId: id };
       case 'highlight':
+        if (!id) return { ok: false, error: 'target_required' };
         this.highlight(id, Number(args.seconds ?? 3));
-        return { ok: true, targetId: id };
+        return { ok: true, action: name, targetId: id };
       case 'move_near':
+        if (!id) return { ok: false, error: 'target_required' };
         await this.moveNear(id);
-        return { ok: true, targetId: id };
+        return { ok: true, action: name, targetId: id };
+      case 'face_user':
+        this.lookTarget = null;
+        this.pointTarget = null;
+        this.setState('looking');
+        setTimeout(() => this.setState('idle'), 700);
+        return { ok: true, action: name };
+      case 'press_button':
+        return this.pressButton(id || 'red_button');
+      case 'remove_filter':
+        return this.removeFilter(id || 'filter');
       default:
-        return { ok: false, error: `Tool not allowed: ${name}` };
+        return { ok: false, error: 'tool_not_allowed', action: name };
     }
   }
 
   highlight(id, seconds = 3) {
     const target = this.targets.get(id);
-    if (!target) return;
+    if (!target || target.noRecolor) return;
     const mat = target.material;
+    const isRed = id === 'red_button';
     if (mat.emissive) {
-      mat.emissive.set(0x25c6ff);
-      mat.emissiveIntensity = 1.8;
+      mat.emissive.set(isRed ? 0xff3149 : 0x25c6ff);
+      mat.emissiveIntensity = isRed ? 2.2 : 1.8;
     }
     clearTimeout(this.highlightTimeouts.get(id));
     this.highlightTimeouts.set(
@@ -474,6 +584,129 @@ export class SpatialScene {
         mat.emissiveIntensity = target.originalIntensity;
       }, Math.max(250, seconds * 1000)),
     );
+  }
+
+  async pressButton(id = 'red_button') {
+    if (id !== 'red_button') return { ok: false, error: 'invalid_button', targetId: id };
+
+    this.deviceState.lastActivatedTarget = 'red_button';
+    this.focusId = 'red_button';
+    this.lookTarget = 'red_button';
+    this.callbacks.onFocusChanged?.('red_button', this.getSceneContext());
+    this.setState('acting');
+    await this.#animateButtonPress();
+    this.deviceState.resetPressed = true;
+    this.#setScreenStatus('reset');
+    this.setState('idle');
+
+    return {
+      ok: true,
+      action: 'press_button',
+      targetId: 'red_button',
+      state: this.getSceneContext().deviceState,
+      taskStep: this.#taskStep(),
+    };
+  }
+
+  #animateButtonPress() {
+    const target = this.targets.get('red_button');
+    const mat = target.material;
+    const restZ = this.redButtonRestZ;
+    const began = performance.now();
+    const duration = 420;
+
+    return new Promise((resolve) => {
+      const tick = (now) => {
+        const t = Math.min(1, (now - began) / duration);
+        const pulse = Math.sin(t * Math.PI);
+        this.redButton.position.z = restZ - 0.045 * pulse;
+        if (mat.emissive) {
+          mat.emissive.setHex(0xff2b3f);
+          mat.emissiveIntensity = target.originalIntensity + 3.2 * pulse;
+        }
+        if (t < 1) requestAnimationFrame(tick);
+        else {
+          this.redButton.position.z = restZ;
+          if (mat.emissive) mat.emissive.copy(target.originalEmissive);
+          mat.emissiveIntensity = target.originalIntensity;
+          resolve();
+        }
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  async removeFilter(id = 'filter') {
+    if (id !== 'filter') return { ok: false, error: 'invalid_filter', targetId: id };
+    if (!this.deviceState.resetPressed) {
+      return {
+        ok: false,
+        error: 'reset_required',
+        action: 'remove_filter',
+        targetId: 'filter',
+        state: this.getSceneContext().deviceState,
+        taskStep: this.#taskStep(),
+      };
+    }
+
+    this.deviceState.lastActivatedTarget = 'filter';
+    this.focusId = 'filter';
+    this.lookTarget = 'filter';
+    this.callbacks.onFocusChanged?.('filter', this.getSceneContext());
+
+    if (!this.deviceState.filterRemoved) {
+      this.setState('acting');
+      await this.#animateFilterRemoval();
+      this.deviceState.filterRemoved = true;
+      this.#setScreenStatus('complete');
+      this.setState('idle');
+    }
+
+    return {
+      ok: true,
+      action: 'remove_filter',
+      targetId: 'filter',
+      state: this.getSceneContext().deviceState,
+      taskStep: this.#taskStep(),
+    };
+  }
+
+  #animateFilterRemoval() {
+    const start = this.filter.position.clone();
+    const end = this.filterRestPosition.clone().add(new THREE.Vector3(0, 0.04, 0.58));
+    const began = performance.now();
+    const duration = 750;
+
+    return new Promise((resolve) => {
+      const tick = (now) => {
+        const t = Math.min(1, (now - began) / duration);
+        const eased = t * t * (3 - 2 * t);
+        this.filter.position.lerpVectors(start, end, eased);
+        this.filterHit.position.copy(this.filter.position);
+        this.targets.get('filter').position.copy(this.device.position).add(this.filter.position);
+        if (t < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  #setScreenStatus(status) {
+    if (status === 'complete') {
+      this.screenMaterial.color.setHex(0x1a554f);
+      this.screenMaterial.emissive.setHex(0x44ffd7);
+      this.screenMaterial.emissiveIntensity = 1.7;
+      return;
+    }
+    if (status === 'reset') {
+      this.screenMaterial.color.setHex(0x173e31);
+      this.screenMaterial.emissive.setHex(0x36dc8c);
+      this.screenMaterial.emissiveIntensity = 1.45;
+      return;
+    }
+    this.screenMaterial.color.setHex(0x17334c);
+    this.screenMaterial.emissive.setHex(0x1f84bd);
+    this.screenMaterial.emissiveIntensity = 0.7;
   }
 
   moveNear(id) {
@@ -503,11 +736,27 @@ export class SpatialScene {
     });
   }
 
+  resetTask() {
+    this.deviceState.resetPressed = false;
+    this.deviceState.filterRemoved = false;
+    this.deviceState.lastActivatedTarget = null;
+    this.filter.position.copy(this.filterRestPosition);
+    this.filterHit.position.copy(this.filterRestPosition);
+    this.targets.get('filter').position.copy(this.device.position).add(this.filter.position);
+    this.redButton.position.z = this.redButtonRestZ;
+    this.#setScreenStatus('idle');
+    this.lookTarget = null;
+    this.pointTarget = null;
+    this.focusId = null;
+    this.avatar.position.copy(this.avatarHome);
+    this.setState('idle');
+    this.callbacks.onFocusChanged?.(null, this.getSceneContext());
+    return this.getSceneContext();
+  }
+
   async enterXR() {
     if (!navigator.xr) throw new Error('WebXR is not available in this browser.');
-    const arSupported = await navigator.xr
-      .isSessionSupported('immersive-ar')
-      .catch(() => false);
+    const arSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
     const mode = arSupported ? 'immersive-ar' : 'immersive-vr';
     const options = arSupported
       ? {
