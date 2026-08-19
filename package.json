@@ -1,11 +1,14 @@
 {
   "name": "spatial-ai-companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "npx serve . -l 4173",
-    "check": "node --check src/main.js && node --check src/scene.js && node --check src/demo.js && node --check src/realtime.js && node --check api/session.js"
+    "check": "node --check src/app.js && node --check src/scene.js && node --check src/realtime.js && node --check api/chat.js && node --check api/health.js && node --check api/session.js"
+  },
+  "dependencies": {
+    "ai": "^6.0.0"
   },
   "engines": {
     "node": ">=20"
