@@ -67,18 +67,8 @@
       </section>
 
       <div id="toast" role="status"></div>
-      <audio id="remote-audio" autoplay></audio>
     </div>
 
-    <script>
-      document.addEventListener('touchend', function (event) {
-        var button = event.target && event.target.closest ? event.target.closest('button') : null;
-        if (!button || button.disabled) return;
-        event.preventDefault();
-        button.click();
-      }, { passive: false });
-    </script>
     <script src="./src/app.js"></script>
-    <script src="./src/tap-interaction.js"></script>
   </body>
 </html>
