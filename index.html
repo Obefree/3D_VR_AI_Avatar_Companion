@@ -1,22 +1,77 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Spatial AI Companion — Functional 3D Demo</title>
-<style>
-:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#07101b;color:#f4f8ff}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07101b}#gl{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0}#ui{position:fixed;inset:0;z-index:1000;pointer-events:none}.card{pointer-events:auto;background:rgba(8,18,30,.84);border:1px solid rgba(150,220,255,.18);box-shadow:0 18px 60px rgba(0,0,0,.3);backdrop-filter:blur(14px)}header{position:absolute;top:14px;left:14px;right:14px;padding:14px 16px;border-radius:18px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.eyebrow{font-size:10px;letter-spacing:.17em;color:#8ddfff;font-weight:800}.title{font-size:clamp(17px,2vw,25px);font-weight:700;margin-top:3px}.pills{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.pill{font-size:11px;padding:7px 9px;border:1px solid rgba(255,255,255,.13);border-radius:999px;background:rgba(255,255,255,.04);color:#adbacb}.pill.ok{color:#baf4ff;border-color:rgba(101,225,255,.3);background:rgba(48,162,200,.13)}#panel{position:absolute;left:14px;bottom:14px;width:min(660px,calc(100vw - 28px));padding:14px;border-radius:18px}.buttons{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px}button,input{font:inherit}button{pointer-events:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;border:1px solid rgba(255,255,255,.15);background:#14263a;color:#f5f9ff;border-radius:11px;min-height:42px;padding:9px 12px;cursor:pointer;position:relative;z-index:1001}button:active{transform:scale(.98);background:#203b56}.primary{background:linear-gradient(135deg,#167ab5,#495fd2);border-color:#57c9ff}.voice{background:#153a38}.row{display:flex;gap:7px}.row input{pointer-events:auto;flex:1;min-width:0;background:#08131f;color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:11px 12px;outline:none;position:relative;z-index:1001}.row input:focus{border-color:#59cfff}.hint{font-size:11px;line-height:1.4;color:#9cabbd;margin:8px 1px}#conversation{position:absolute;right:14px;bottom:14px;width:340px;max-height:48vh;padding:13px;border-radius:18px;display:flex;flex-direction:column;gap:8px}.section-title{font-size:10px;letter-spacing:.15em;color:#8ddfff;font-weight:800}.messages{overflow:auto;display:flex;flex-direction:column;gap:7px}.msg{font-size:12px;line-height:1.42;padding:8px 10px;border-radius:11px;background:rgba(255,255,255,.055)}.msg.user{margin-left:25px;background:rgba(75,110,210,.2)}.msg.ai{margin-right:20px;background:rgba(49,190,178,.12)}#debug{position:absolute;right:14px;top:105px;width:260px;padding:12px;border-radius:16px;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.6;color:#c4d2e3}.kv{display:flex;justify-content:space-between;gap:12px}.kv span:first-child{color:#71839a}.kv span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#toast{position:absolute;top:100px;left:50%;transform:translateX(-50%) translateY(-8px);padding:8px 12px;border-radius:12px;background:rgba(3,8,14,.94);border:1px solid rgba(255,255,255,.14);opacity:0;transition:.18s;pointer-events:none;font-size:12px;max-width:min(520px,calc(100vw - 30px));text-align:center}#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}@media(max-width:920px){#debug{display:none}#conversation{left:10px;right:10px;top:90px;bottom:auto;width:auto;max-height:25vh}#panel{left:10px;right:10px;bottom:10px;width:auto}.msg{font-size:11px}}@media(max-width:560px){header{left:8px;right:8px;top:8px;padding:11px}.title{font-size:15px}.pills{display:none}#conversation{top:76px;max-height:23vh}#panel{left:8px;right:8px;bottom:8px;padding:10px}.buttons{gap:5px}button{min-height:40px;padding:8px 9px;font-size:12px}.hint{font-size:10px;margin:6px 1px}.row input{padding:10px;font-size:13px}}
-</style>
-</head>
-<body>
-<canvas id="gl"></canvas>
-<div id="ui">
-<header class="card"><div><div class="eyebrow">SPATIAL AI COMPANION</div><div class="title">Functional WebGL 3D prototype</div></div><div class="pills"><span id="render-pill" class="pill">starting</span><span id="mode-pill" class="pill ok">Demo AI</span></div></header>
-<div id="debug" class="card"><div class="section-title">RUNTIME</div><div class="kv"><span>Renderer</span><span id="dbg-render">starting</span></div><div class="kv"><span>State</span><span id="dbg-state">idle</span></div><div class="kv"><span>Target</span><span id="dbg-target">device</span></div><div class="kv"><span>Last click</span><span id="dbg-click">none</span></div><div class="kv"><span>Last tool</span><span id="dbg-tool">none</span></div></div>
-<section id="conversation" class="card"><div class="section-title">CONVERSATION</div><div id="messages" class="messages"></div></section>
-<section id="panel" class="card"><div class="buttons"><button id="btn-red" class="primary" type="button" onclick="window.NovaApp&&window.NovaApp.command('red')">Show red button</button><button id="btn-next" type="button" onclick="window.NovaApp&&window.NovaApp.command('next')">What next?</button><button id="btn-help" type="button" onclick="window.NovaApp&&window.NovaApp.command('help')">Help me</button><button id="btn-demo" type="button" onclick="window.NovaApp&&window.NovaApp.guided()">Guided demo</button><button id="btn-talk" class="voice" type="button" onclick="window.NovaApp&&window.NovaApp.talk()">Talk to Nova</button></div><div class="row"><input id="prompt" placeholder="Ask Nova: show me the red button"><button id="btn-send" class="primary" type="button" onclick="window.NovaApp&&window.NovaApp.send()">Send</button></div><div class="hint">Dependency-free WebGL build. Every click updates the runtime immediately; the 3D canvas cannot intercept input.</div></section>
-<div id="toast"></div></div>
-<script>
-(function(){'use strict';const $=id=>document.getElementById(id),canvas=$('gl'),gl=canvas.getContext('webgl',{antialias:true,alpha:false}),state={mode:'idle',target:'device',point:false,highlight:null,moveX:-1.4,movingTo:null,clicks:0,renderer:!!gl};function setText(id,t){const e=$(id);if(e)e.textContent=t}function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>e.classList.remove('show'),2200)}function noteClick(name){state.clicks++;setText('dbg-click',name+' #'+state.clicks);toast('Clicked: '+name)}function add(role,text){const e=document.createElement('div');e.className='msg '+(role==='user'?'user':'ai');e.textContent=(role==='user'?'You: ':'Nova: ')+text;$('messages').appendChild(e);$('messages').scrollTop=$('messages').scrollHeight}function speak(text){if(!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=1.03;u.pitch=1.06;speechSynthesis.speak(u)}catch(e){}}function setMode(m){state.mode=m;setText('dbg-state',m)}function tool(name,target){state.target=target||state.target;setText('dbg-target',state.target);setText('dbg-tool',name+'('+state.target+')');if(name==='point_at'){state.point=true;setTimeout(()=>state.point=false,2600)}if(name==='highlight'){const active=state.target;state.highlight=active;setTimeout(()=>{if(state.highlight===active)state.highlight=null},3000)}if(name==='move_near')state.movingTo=.05}function answer(text){const s=text.toLowerCase();if(/red|button|кноп/.test(s)){tool('look_at','red_button');tool('point_at','red_button');tool('highlight','red_button');return'The red control on the right is the reset button. Start with this one.'}if(/next|filter|дальш|фильтр/.test(s)){tool('look_at','filter');tool('point_at','filter');tool('highlight','filter');return'Next, remove the cylindrical filter below the front panel.'}if(/help|fix|repair|помог/.test(s)){tool('move_near','device');tool('look_at','device');return'Sure. I will guide you step by step. First, find the red reset control on the front panel.'}if(/hello|hi|привет/.test(s))return'Hi. I am Nova. Ask me to show the reset button or guide you through the task.';return'I can help with this spatial demo. Ask me to show the red button or what to do next.'}async function process(text){text=String(text||'').trim();if(!text)return;add('user',text);setMode('thinking');await new Promise(r=>setTimeout(r,180));const r=answer(text);setMode('speaking');add('ai',r);speak(r);setTimeout(()=>setMode('idle'),900)}async function guided(){noteClick('guided');if(window.NovaApp.busy)return;window.NovaApp.busy=true;try{add('ai','Hi. I am Nova, a spatial AI companion.');speak('Hi. I am Nova, a spatial AI companion.');await new Promise(r=>setTimeout(r,500));add('user','Can you help me with this device?');tool('move_near','device');await new Promise(r=>setTimeout(r,650));add('ai','Of course. I can combine conversation with spatial actions.');await new Promise(r=>setTimeout(r,500));add('user','Show me what I should touch first.');tool('look_at','red_button');tool('point_at','red_button');tool('highlight','red_button');await new Promise(r=>setTimeout(r,350));add('ai','Start with the red reset button on the right.');speak('Start with the red reset button on the right.')}finally{window.NovaApp.busy=false}}function talk(){noteClick('talk');const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){toast('Voice recognition is unavailable here. Type a message instead.');return}const rec=new SR();rec.lang='en-US';rec.interimResults=false;rec.onstart=()=>{setMode('listening');$('btn-talk').textContent='Listening…'};rec.onresult=e=>process(e.results[0][0].transcript);rec.onerror=e=>toast('Voice error: '+e.error);rec.onend=()=>{$('btn-talk').textContent='Talk to Nova';if(state.mode==='listening')setMode('idle')};try{rec.start()}catch(e){toast(e.message)}}window.NovaApp={busy:false,command(which){noteClick(which);const map={red:'Show me the red button',next:'What should I do next?',help:'Can you help me fix this device?'};process(map[which]||which)},guided,talk,send(){noteClick('send');process($('prompt').value);$('prompt').value=''}};$('prompt').addEventListener('keydown',e=>{if(e.key==='Enter')window.NovaApp.send()});[['btn-red','red'],['btn-next','next'],['btn-help','help']].forEach(([id,c])=>$(id).addEventListener('pointerup',()=>setText('dbg-click',c+' pointerup')));add('ai','Hi. I am Nova. The 3D runtime and controls are ready.');if(!gl){setText('render-pill','WebGL unavailable');setText('dbg-render','unavailable');toast('WebGL is unavailable, but controls still work.');return}setText('render-pill','WebGL 3D');$('render-pill').classList.add('ok');setText('dbg-render','WebGL ready');const vs=`attribute vec3 aPos;attribute vec3 aColor;uniform mat4 uMVP;varying vec3 vColor;void main(){gl_Position=uMVP*vec4(aPos,1.0);vColor=aColor;}`,fs=`precision mediump float;varying vec3 vColor;uniform float uGlow;void main(){vec3 c=vColor*(0.75+uGlow*0.9);gl_FragColor=vec4(c,1.0);}`;function shader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s}const prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,vs));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));gl.useProgram(prog);const locPos=gl.getAttribLocation(prog,'aPos'),locColor=gl.getAttribLocation(prog,'aColor'),locMVP=gl.getUniformLocation(prog,'uMVP'),locGlow=gl.getUniformLocation(prog,'uGlow'),verts=new Float32Array([-1,-1,1,1,0,0,1,-1,1,0,1,0,1,1,1,0,0,1,-1,1,1,1,1,0,-1,-1,-1,1,0,1,-1,1,-1,0,1,1,1,1,-1,1,1,1,1,-1,-1,.5,.7,1,-1,1,-1,.5,.7,1,-1,1,1,.5,.7,1,1,1,1,.5,.7,1,1,1,-1,.5,.7,1,-1,-1,-1,.3,.5,.8,1,-1,-1,.3,.5,.8,1,-1,1,.3,.5,.8,-1,-1,1,.3,.5,.8,1,-1,-1,.4,.7,1,1,1,-1,.4,.7,1,1,1,1,.4,.7,1,1,-1,1,.4,.7,1,-1,-1,-1,.4,.7,1,-1,-1,1,.4,.7,1,-1,1,1,.4,.7,1,-1,1,-1,.4,.7,1]),idx=new Uint16Array([0,1,2,0,2,3,4,5,6,4,6,7,8,9,10,8,10,11,12,13,14,12,14,15,16,17,18,16,18,19,20,21,22,20,22,23]);const vb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);gl.enableVertexAttribArray(locPos);gl.vertexAttribPointer(locPos,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(locColor);gl.vertexAttribPointer(locColor,3,gl.FLOAT,false,24,12);gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);const M={id:()=>[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],mul(a,b){const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o},t(x,y,z){const m=this.id();m[12]=x;m[13]=y;m[14]=z;return m},s(x,y,z){const m=this.id();m[0]=x;m[5]=y;m[10]=z;return m},rz(a){const c=Math.cos(a),s=Math.sin(a),m=this.id();m[0]=c;m[1]=s;m[4]=-s;m[5]=c;return m},persp(fov,asp,n,f){const q=1/Math.tan(fov/2),nf=1/(n-f);return[q/asp,0,0,0,0,q,0,0,0,0,(f+n)*nf,-1,0,0,2*f*n*nf,0]},look(ex,ey,ez,cx,cy,cz){let zx=ex-cx,zy=ey-cy,zz=ez-cz,zl=Math.hypot(zx,zy,zz);zx/=zl;zy/=zl;zz/=zl;let xx=zz,xy=0,xz=-zx,xl=Math.hypot(xx,xz);xx/=xl;xz/=xl;let yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;return[xx,yx,zx,0,xy,yy,zy,0,xz,yz,zz,0,-xx*ex-xy*ey-xz*ez,-yx*ex-yy*ey-yz*ez,-zx*ex-zy*ey-zz*ez,1]}};function mat(...ms){return ms.reduce((a,b)=>M.mul(a,b),M.id())}let proj,view;function resize(){const d=Math.min(devicePixelRatio||1,2),w=Math.floor(innerWidth*d),h=Math.floor(innerHeight*d);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}gl.viewport(0,0,w,h);proj=M.persp(Math.PI/3,w/h,.1,100);view=M.look(0,2,5.8,0,.8,0)}addEventListener('resize',resize);resize();function cube(x,y,z,sx,sy,sz,glow=0,rz=0){const model=mat(M.t(x,y,z),M.rz(rz),M.s(sx,sy,sz));gl.uniformMatrix4fv(locMVP,false,new Float32Array(mat(proj,view,model)));gl.uniform1f(locGlow,glow);gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_SHORT,0)}function frame(t){resize();gl.clearColor(.025,.06,.1,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);const tt=t*.001;for(let x=-4;x<=4;x++)for(let z=-3;z<=2;z++)cube(x*.75,-.04,z*.75,.35,.02,.35);cube(1.35,.72,-.25,.55,.72,.42);cube(1.35,.83,.2,.43,.28,.035);cube(1.68,.78,.27,.10,.10,.05,state.highlight==='red_button'?1.8:0);cube(1.28,.31,.28,.28,.10,.08,state.highlight==='filter'?1.6:0);if(state.movingTo!==null){state.moveX+=(state.movingTo-state.moveX)*.035;if(Math.abs(state.moveX-state.movingTo)<.02)state.movingTo=null}const bx=state.moveX,by=.88+Math.sin(tt*2.2)*.035;cube(bx,by,-.05,.30,.48,.22);cube(bx,by+.58,-.03,.28,.22,.24);cube(bx-.11,by+.60,.23,.035,.035,.025,.8);cube(bx+.11,by+.60,.23,.035,.035,.025,.8);cube(bx-.14,by-.47,-.02,.10,.16,.14);cube(bx+.14,by-.47,-.02,.10,.16,.14);cube(bx-.40,by+.04,0,.07,.30,.07);cube(bx+.42,by+.05,.02,.07,.32,.07,0,state.point?-.90:0);requestAnimationFrame(frame)}requestAnimationFrame(frame)})();
-</script>
-</body></html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b12" />
+    <title>Spatial AI Companion</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app-shell">
+      <canvas id="scene"></canvas>
+      <div id="crosshair" aria-hidden="true"></div>
+
+      <header class="topbar glass">
+        <div>
+          <div class="eyebrow">SPATIAL AI COMPANION</div>
+          <h1>Embodied realtime AI for games, VR and AR</h1>
+        </div>
+        <div class="status-row">
+          <span id="mode-pill" class="pill">Demo mode</span>
+          <span id="connection-pill" class="pill muted">Offline</span>
+        </div>
+      </header>
+
+      <section class="controls glass">
+        <div class="button-row">
+          <button id="live-button" class="primary" type="button">Connect Live AI</button>
+          <button id="voice-demo-button" type="button">Talk to Nova</button>
+          <button id="demo-button" type="button">Run guided demo</button>
+          <button id="xr-button" class="hidden" type="button">Enter XR</button>
+        </div>
+        <p class="hint">
+          Type a message or use Talk to Nova. Live AI requires a secure backend; demo controls work independently.
+        </p>
+        <div class="prompt-row">
+          <input id="text-input" type="text" autocomplete="off" placeholder="Try: Show me the red button" />
+          <button id="send-button" type="button">Send</button>
+        </div>
+        <div class="quick-prompts">
+          <button type="button" data-prompt="What am I looking at?">What am I looking at?</button>
+          <button type="button" data-prompt="Show me the red button">Show me the red button</button>
+          <button type="button" data-prompt="What should I do next?">What should I do next?</button>
+        </div>
+      </section>
+
+      <aside class="dev-panel glass">
+        <div class="panel-title">Agent state</div>
+        <dl>
+          <div><dt>State</dt><dd id="agent-state">idle</dd></div>
+          <div><dt>Focus</dt><dd id="focus-target">none</dd></div>
+          <div><dt>Visible</dt><dd id="visible-targets">device, red_button, filter</dd></div>
+          <div><dt>Last tool</dt><dd id="last-tool">—</dd></div>
+          <div><dt>Transport</dt><dd id="transport-state">starting</dd></div>
+        </dl>
+      </aside>
+
+      <section class="transcript glass" aria-live="polite">
+        <div class="panel-title">Conversation</div>
+        <div id="messages"></div>
+      </section>
+
+      <div id="toast" role="status"></div>
+      <audio id="remote-audio" autoplay></audio>
+    </div>
+
+    <script src="./src/app.js"></script>
+  </body>
+</html>
