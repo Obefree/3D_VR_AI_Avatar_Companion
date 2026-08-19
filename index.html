@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#070b12" />
     <title>Spatial AI Companion</title>
     <link rel="stylesheet" href="./styles.css" />
+    <style>@media (pointer: coarse) { #scene { pointer-events: none !important; } }</style>
     <script type="importmap">
       {
         "imports": {
@@ -71,8 +72,6 @@
     </div>
 
     <script>
-      // Mobile webviews sometimes fail to synthesize a click after touchend.
-      // Bridge touch directly to the existing click handlers without changing UI.
       document.addEventListener('touchend', function (event) {
         var button = event.target && event.target.closest ? event.target.closest('button') : null;
         if (!button || button.disabled) return;
