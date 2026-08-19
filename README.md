@@ -13,6 +13,7 @@ The same agent concept can act as a game companion, onboarding guide, museum cha
 - safe application-defined tool calls instead of arbitrary AI control;
 - realtime speech-to-speech through OpenAI Realtime WebRTC;
 - a scripted fallback demo that works without any API key;
+- browser speech recognition + speech synthesis for a zero-key voice demo;
 - WebXR entry point for compatible headsets and browsers.
 
 ## Demo modes
@@ -27,13 +28,13 @@ Try:
 - `Show me the red button`
 - `What should I do next?`
 
-The browser uses built-in speech synthesis for the scripted assistant voice.
+Use **Talk to Nova** in Chrome/Edge to speak instead of typing. The browser performs speech recognition and Nova replies using built-in speech synthesis while the same spatial tool layer drives the 3D avatar.
 
 ### 2. Live AI mode
 
 `Connect Live AI` creates a WebRTC session with the OpenAI Realtime API. Microphone audio and model audio are carried by WebRTC. Spatial actions are returned as function calls and executed locally in the 3D scene.
 
-The permanent OpenAI API key stays on the server.
+The permanent OpenAI API key stays on the server. It is intentionally never embedded in the static site.
 
 ## Architecture
 
@@ -72,6 +73,16 @@ Then open `http://localhost:4173`.
 
 Because Three.js is loaded through an import map from jsDelivr, there is no frontend build step for this first MVP.
 
+## Public static preview
+
+Because the repository is public, the latest `main` can also be rendered through a source CDN:
+
+```text
+https://raw.githack.com/Obefree/3D_VR_AI_Avatar_Companion/main/index.html
+```
+
+This preview runs Demo Mode, browser voice input, 3D spatial tools, and WebXR where the browser supports it. A source-CDN preview cannot run the server-only `/api/session` endpoint, so Live OpenAI Realtime requires a serverless deployment.
+
 ## Deploy the live version on Vercel
 
 1. Import this GitHub repository into Vercel.
@@ -89,13 +100,9 @@ The browser sends an SDP offer to that endpoint. The server forwards it to OpenA
 
 ## GitHub Pages
 
-The included workflow deploys the static demo on pushes to `main`. GitHub Pages cannot safely hold a permanent OpenAI API key, so Pages intentionally runs the fully functional scripted demo mode.
+The included workflow deploys the static demo on pushes to `main`. GitHub Pages cannot safely hold a permanent OpenAI API key, so Pages intentionally runs the fully functional demo mode.
 
-If Pages is not yet enabled for a new repository, open:
-
-`Settings → Pages → Source → GitHub Actions`
-
-and run the workflow again.
+For a new repository, Pages must be enabled once with `Settings → Pages → Source → GitHub Actions`.
 
 ## WebXR
 
@@ -119,16 +126,6 @@ Allowed target IDs:
 - `device`
 - `red_button`
 - `filter`
-
-## Next steps
-
-- import a polished GLB avatar and animation clips;
-- add hand/controller interaction in WebXR;
-- add a true XR scene adapter for real-world anchors;
-- add native Quest passthrough camera + depth adapter;
-- optionally add image input for visual questions;
-- persist user/task state and memory;
-- add latency and tool-call telemetry to the developer panel.
 
 ## Security notes
 
