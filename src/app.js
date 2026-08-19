@@ -1,12 +1,14 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const messages = $('messages');
+
   let scene = createFallbackScene();
   let live = null;
   let liveMode = false;
+  let cloudAiReady = false;
   let voiceRecognition = null;
   let partialBubble = null;
-  let demoBusy = false;
+  let busy = false;
 
   function setText(id, text) {
     const el = $(id);
@@ -31,6 +33,7 @@
 
   function addMessage(role, text, replacePartial = false) {
     if (!messages) return;
+
     if (replacePartial && partialBubble) {
       partialBubble.querySelector('.body').textContent = text;
       partialBubble = null;
@@ -112,12 +115,12 @@
         },
       });
       scene = realScene;
-      setText('transport-state', '3D ready');
+      setText('transport-state', cloudAiReady ? 'AI ready' : '3D ready');
       setText('focus-target', scene.getSceneContext().gazeTarget ?? 'none');
       setupXRButton();
     } catch (error) {
       console.error('3D scene failed to load:', error);
-      setText('transport-state', 'UI demo ready');
+      setText('transport-state', cloudAiReady ? 'AI ready' : 'UI demo ready');
       toast('3D failed to load, but chat and buttons still work.', 5200);
     }
   }
@@ -148,96 +151,147 @@
     }
   }
 
-  async function say(text) {
+  async function say(text, transportLabel = null) {
     scene.setState('speaking');
-    setText('transport-state', liveMode ? 'live AI' : 'demo');
+    if (transportLabel) setText('transport-state', transportLabel);
     addMessage('assistant', text);
     speak(text);
-    await wait(Math.min(1600, 300 + text.length * 11));
+    await wait(Math.min(1500, 280 + text.length * 10));
     scene.setState('idle');
   }
 
-  async function demoRespond(text) {
-    if (demoBusy) return;
-    demoBusy = true;
+  async function applySpatialIntent(text) {
+    const lower = text.toLowerCase();
+    const focus = scene.getSceneContext?.().gazeTarget || 'device';
+
+    if (lower.includes('red') || lower.includes('button') || lower.includes('кноп')) {
+      await executeTool('look_at', { targetId: 'red_button' });
+      await executeTool('point_at', { targetId: 'red_button' });
+      await executeTool('highlight', { targetId: 'red_button', seconds: 3 });
+      return;
+    }
+
+    if (lower.includes('next') || lower.includes('дальш') || lower.includes('filter') || lower.includes('фильтр')) {
+      await executeTool('look_at', { targetId: 'filter' });
+      await executeTool('point_at', { targetId: 'filter' });
+      await executeTool('highlight', { targetId: 'filter', seconds: 3 });
+      return;
+    }
+
+    if (lower.includes('looking') || lower.includes('this') || lower.includes('это') || lower.includes('смотр') || lower.includes('what is')) {
+      await executeTool('look_at', { targetId: focus || 'device' });
+      return;
+    }
+
+    if (lower.includes('help') || lower.includes('fix') || lower.includes('repair') || lower.includes('помог')) {
+      await executeTool('move_near', { targetId: 'device' });
+      await executeTool('look_at', { targetId: 'device' });
+    }
+  }
+
+  async function demoRespond(text, skipUser = false) {
+    if (!skipUser) addMessage('user', text);
+    scene.setState('thinking');
+    setText('transport-state', 'demo thinking');
+    await wait(160);
+
+    const lower = text.toLowerCase();
+    const focus = scene.getSceneContext?.().gazeTarget || 'device';
+    await applySpatialIntent(text);
+
+    if (lower.includes('red') || lower.includes('button') || lower.includes('кноп')) {
+      await say('The red control on the right is the reset button. Start with this one.', 'demo');
+      return;
+    }
+
+    if (lower.includes('next') || lower.includes('дальш') || lower.includes('filter') || lower.includes('фильтр')) {
+      await say('Next, remove the cylindrical filter below the front panel.', 'demo');
+      return;
+    }
+
+    if (lower.includes('looking') || lower.includes('this') || lower.includes('это') || lower.includes('смотр') || lower.includes('what is')) {
+      const id = focus || 'device';
+      const label = scene.targets?.get?.(id)?.label || id.replaceAll('_', ' ');
+      await say(`You are looking at the ${label}. I can point to a control or guide you through the task.`, 'demo');
+      return;
+    }
+
+    if (lower.includes('help') || lower.includes('fix') || lower.includes('repair') || lower.includes('помог')) {
+      await say('Sure. I will guide you step by step. First, find the red reset control on the front panel.', 'demo');
+      return;
+    }
+
+    if (lower.includes('hello') || lower.includes('hi') || lower.includes('привет')) {
+      await say('Hi. I am Nova. Ask me to show you the reset button, identify what you are looking at, or guide you through the task.', 'demo');
+      return;
+    }
+
+    await say('I can help with this spatial demo. Try “Show me the red button”, “What am I looking at?”, or “What should I do next?”.', 'demo');
+  }
+
+  async function cloudRespond(text) {
+    addMessage('user', text);
+    scene.setState('thinking');
+    setText('transport-state', 'AI thinking');
+    setConnection('AI thinking', true);
+
     try {
-      addMessage('user', text);
-      scene.setState('thinking');
-      setText('transport-state', 'thinking');
-      await wait(180);
+      const response = await fetch('./api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          scene: scene.getSceneContext?.() || {},
+        }),
+        cache: 'no-store',
+      });
 
-      const lower = text.toLowerCase();
-      const focus = scene.getSceneContext?.().gazeTarget || 'device';
-
-      if (lower.includes('red') || lower.includes('button') || lower.includes('кноп')) {
-        await executeTool('look_at', { targetId: 'red_button' });
-        await executeTool('point_at', { targetId: 'red_button' });
-        await executeTool('highlight', { targetId: 'red_button', seconds: 3 });
-        await say('The red control on the right is the reset button. Start with this one.');
-        return;
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.text) {
+        throw new Error(data?.error || `AI endpoint failed (${response.status})`);
       }
 
-      if (lower.includes('next') || lower.includes('дальш') || lower.includes('filter') || lower.includes('фильтр')) {
-        await executeTool('look_at', { targetId: 'filter' });
-        await executeTool('point_at', { targetId: 'filter' });
-        await executeTool('highlight', { targetId: 'filter', seconds: 3 });
-        await say('Next, remove the cylindrical filter below the front panel.');
-        return;
-      }
-
-      if (lower.includes('looking') || lower.includes('this') || lower.includes('это') || lower.includes('смотр') || lower.includes('what is')) {
-        const id = focus || 'device';
-        const label = scene.targets?.get?.(id)?.label || id.replaceAll('_', ' ');
-        await executeTool('look_at', { targetId: id });
-        await say(`You are looking at the ${label}. I can point to a control or guide you through the task.`);
-        return;
-      }
-
-      if (lower.includes('help') || lower.includes('fix') || lower.includes('repair') || lower.includes('помог')) {
-        await executeTool('move_near', { targetId: 'device' });
-        await executeTool('look_at', { targetId: 'device' });
-        await say('Sure. I will guide you step by step. First, find the red reset control on the front panel.');
-        return;
-      }
-
-      if (lower.includes('hello') || lower.includes('hi') || lower.includes('привет')) {
-        await say('Hi. I am Nova. Ask me to show you the reset button, identify what you are looking at, or guide you through the task.');
-        return;
-      }
-
-      await say('I can help with this spatial demo. Try “Show me the red button”, “What am I looking at?”, or “What should I do next?”.');
-    } finally {
-      demoBusy = false;
-      setText('transport-state', liveMode ? 'live AI' : 'demo');
+      await applySpatialIntent(text);
+      await say(data.text, 'AI ready');
+      setConnection('AI ready', true);
+      return true;
+    } catch (error) {
+      console.error('Cloud AI failed; using demo fallback:', error);
+      cloudAiReady = false;
+      setText('mode-pill', 'Demo mode');
+      setConnection('Demo fallback', false);
+      toast('Cloud AI is unavailable, so Nova switched to the local fallback.', 4800);
+      await demoRespond(text, true);
+      return false;
     }
   }
 
   async function runGuidedDemo() {
-    if (demoBusy) return;
-    demoBusy = true;
+    if (busy) return;
+    busy = true;
     try {
-      await say('Hi. I am Nova, a spatial AI companion.');
+      await say('Hi. I am Nova, a spatial AI companion.', cloudAiReady ? 'AI ready' : 'demo');
       addMessage('user', 'Can you help me with this device?');
       scene.setState('thinking');
-      await wait(250);
+      await wait(220);
       await executeTool('move_near', { targetId: 'device' });
       await executeTool('look_at', { targetId: 'device' });
-      await say('Of course. I can combine conversation with spatial actions.');
+      await say('Of course. I can combine conversation with spatial actions.', cloudAiReady ? 'AI ready' : 'demo');
       addMessage('user', 'Show me what I should touch first.');
       scene.setState('thinking');
-      await wait(250);
+      await wait(220);
       await executeTool('look_at', { targetId: 'red_button' });
       await executeTool('point_at', { targetId: 'red_button' });
       await executeTool('highlight', { targetId: 'red_button', seconds: 3 });
-      await say('Start with the red reset button on the right.');
+      await say('Start with the red reset button on the right.', cloudAiReady ? 'AI ready' : 'demo');
     } finally {
-      demoBusy = false;
+      busy = false;
     }
   }
 
   async function sendPrompt(text) {
     const value = String(text || '').trim();
-    if (!value) return;
+    if (!value || busy) return;
     if ($('text-input')) $('text-input').value = '';
 
     if (liveMode && live?.connected) {
@@ -246,13 +300,19 @@
       } catch (error) {
         toast(error.message);
         liveMode = false;
-        setText('mode-pill', 'Demo mode');
-        await demoRespond(value);
+        if (cloudAiReady) await cloudRespond(value);
+        else await demoRespond(value);
       }
       return;
     }
 
-    await demoRespond(value);
+    busy = true;
+    try {
+      if (cloudAiReady) await cloudRespond(value);
+      else await demoRespond(value);
+    } finally {
+      busy = false;
+    }
   }
 
   function setupVoiceDemo() {
@@ -293,8 +353,10 @@
 
     voiceRecognition.onend = () => {
       button.textContent = 'Talk to Nova';
-      if (!liveMode) setConnection('Offline', false);
-      scene.setState('idle');
+      if (liveMode) setConnection('connected', true);
+      else if (cloudAiReady) setConnection('AI ready', true);
+      else setConnection('Offline', false);
+      if (scene.avatarState === 'listening') scene.setState('idle');
     };
 
     button.addEventListener('click', () => {
@@ -306,7 +368,24 @@
     });
   }
 
-  async function backendAvailable() {
+  async function detectCloudAI() {
+    try {
+      const response = await fetch('./api/chat', { method: 'GET', cache: 'no-store' });
+      if (!response.ok) return false;
+      const data = await response.json().catch(() => null);
+      if (!data?.ok) return false;
+      cloudAiReady = true;
+      setText('mode-pill', 'AI mode');
+      setConnection('AI ready', true);
+      setText('transport-state', 'AI ready');
+      return true;
+    } catch {
+      cloudAiReady = false;
+      return false;
+    }
+  }
+
+  async function realtimeBackendAvailable() {
     try {
       const response = await fetch('./api/health', { method: 'GET', cache: 'no-store' });
       if (!response.ok) return false;
@@ -329,16 +408,16 @@
     const button = $('live-button');
     if (!button || button.disabled) return;
     button.disabled = true;
-    button.textContent = 'Checking backend…';
+    button.textContent = 'Checking Realtime…';
 
-    const available = await backendAvailable();
+    const available = await realtimeBackendAvailable();
     if (!available) {
       button.disabled = false;
-      button.textContent = 'Connect Live AI';
-      liveMode = false;
-      setText('mode-pill', 'Demo mode');
-      setConnection('No AI backend', false);
-      toast('OpenAI backend is not deployed on this host yet. Demo chat and Talk to Nova still work.', 6500);
+      button.textContent = 'Connect Realtime Voice';
+      setConnection(cloudAiReady ? 'AI ready' : 'Demo ready', cloudAiReady);
+      toast(cloudAiReady
+        ? 'Realtime voice is not configured, but the real AI chat is already active. Use Talk to Nova for voice input.'
+        : 'Realtime backend is not configured on this host. Demo mode still works.', 6200);
       return;
     }
 
@@ -355,20 +434,20 @@
       });
       await live.connect();
       liveMode = true;
-      setText('mode-pill', 'Live AI');
-      button.textContent = 'Live AI connected';
+      setText('mode-pill', 'Realtime AI');
+      button.textContent = 'Realtime connected';
       setConnection('connected', true);
       toast('OpenAI Realtime is connected. You can speak naturally.');
     } catch (error) {
-      console.error('Live AI connection failed:', error);
+      console.error('Realtime AI connection failed:', error);
       live?.disconnect?.();
       live = null;
       liveMode = false;
-      setText('mode-pill', 'Demo mode');
+      setText('mode-pill', cloudAiReady ? 'AI mode' : 'Demo mode');
       button.disabled = false;
-      button.textContent = 'Connect Live AI';
-      setConnection('AI error', false);
-      toast(`Live AI failed: ${error.message}`, 6500);
+      button.textContent = 'Connect Realtime Voice';
+      setConnection(cloudAiReady ? 'AI ready' : 'AI error', cloudAiReady);
+      toast(`Realtime failed: ${error.message}`, 6500);
     }
   }
 
@@ -415,5 +494,7 @@
   addMessage('assistant', 'Hi. I am Nova. The controls are ready. Ask me about the device or run the guided demo.');
   setText('transport-state', 'UI ready');
   setConnection('Offline', false);
-  load3DScene();
+  $('live-button') && ($('live-button').textContent = 'Connect Realtime Voice');
+
+  detectCloudAI().finally(load3DScene);
 })();
