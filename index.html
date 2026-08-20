@@ -38,15 +38,15 @@
           <button id="demo-button" type="button">Run guided demo</button>
           <button id="xr-button" class="hidden" type="button">Enter XR</button>
         </div>
-        <p class="hint">Type a message or use Talk to Nova. Live AI requires a secure backend; demo controls work independently.</p>
+        <p class="hint">Talk naturally to Nova. It can act with its body, understand the room, and create, move or remove simple scene objects.</p>
         <div class="prompt-row">
-          <input id="text-input" type="text" autocomplete="off" placeholder="Try: Show me the red button" />
+          <input id="text-input" type="text" autocomplete="off" placeholder="Try: Raise your left hand or create a blue cube" />
           <button id="send-button" type="button">Send</button>
         </div>
         <div class="quick-prompts">
-          <button type="button" data-prompt="What am I looking at?">What am I looking at?</button>
-          <button type="button" data-prompt="Show me the red button">Show me the red button</button>
-          <button type="button" data-prompt="What should I do next?">What should I do next?</button>
+          <button type="button" data-prompt="Подними левую руку">Подними левую руку</button>
+          <button type="button" data-prompt="Что находится вокруг тебя?">Что вокруг тебя?</button>
+          <button type="button" data-prompt="Создай синий куб перед собой">Создай синий куб</button>
         </div>
       </section>
 
@@ -77,6 +77,7 @@
         window.__NOVA_AI_ENDPOINT = './api/chat';
       }
     </script>
+    <script src="./src/embodiment.js"></script>
     <script src="./src/app.js"></script>
   </body>
 </html>
