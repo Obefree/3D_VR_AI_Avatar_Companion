@@ -70,13 +70,15 @@
     </div>
 
     <script>
-      if (
-        !window.__NOVA_AI_ENDPOINT &&
-        (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
-      ) {
-        window.__NOVA_AI_ENDPOINT = './api/chat';
+      if (!window.__NOVA_AI_ENDPOINT) {
+        if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+          window.__NOVA_AI_ENDPOINT = './api/chat';
+        } else {
+          window.__NOVA_AI_ENDPOINT = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-openrouter';
+        }
       }
     </script>
+    <script src="./src/openrouter-auth.js"></script>
     <script src="./src/app.js"></script>
     <script src="./src/embodiment.js"></script>
     <script src="./src/xr-controls.js"></script>
