@@ -13,7 +13,6 @@ const mime = {
   '.json': 'application/json; charset=utf-8',
 };
 
-// Verify the real public backend before booting the browser.
 const health = await fetch(AI_ENDPOINT, { headers: { accept: 'application/json' } });
 assert.equal(health.status, 200, `real AI health failed: ${health.status}`);
 const healthJson = await health.json();
@@ -52,8 +51,6 @@ try {
     locale: 'ru-RU',
   });
 
-  // Force the production backend even though the page itself is served locally.
-  // Speech output is mocked only to keep CI fast; recognition wiring is covered by deterministic E2E.
   await context.addInitScript(({ endpoint }) => {
     window.__NOVA_AI_ENDPOINT = endpoint;
     class MockUtterance {
@@ -93,7 +90,11 @@ try {
   );
 
   await page.click('#live-button');
-  await page.waitForFunction(() => document.getElementById('live-button')?.textContent === 'AI connected', null, { timeout: 10000 });
+  await page.waitForFunction(
+    () => document.getElementById('live-button')?.textContent === 'AI connected',
+    null,
+    { timeout: 10000 },
+  );
   assert.equal(await page.textContent('#mode-pill'), 'AI mode');
   assert.equal(await page.textContent('#connection-pill'), 'Connected');
 
@@ -115,7 +116,6 @@ try {
   await send('Покажи красную кнопку', () => window.__novaScene.lookTarget === 'red_button');
   let state = await page.evaluate(() => window.__novaScene.getSceneContext());
   assert.equal(state.deviceState.resetPressed, false, 'show command accidentally pressed reset');
-  assert.equal(window === undefined, false); // keep Node/browser scopes visibly separate in stack traces
 
   await send('Нажми её', () => window.__novaScene.deviceState.resetPressed === true);
   state = await page.evaluate(() => window.__novaScene.getSceneContext());
