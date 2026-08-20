@@ -10,11 +10,17 @@
     keyStatus: 'unknown',
   };
   const active = String(window.__NOVA_AI_ENDPOINT || '').includes('nova-groq');
+  const serverManaged = PROXY.includes('/functions/v1/nova-groq-vault');
 
   const getKey = () => {
+    if (serverManaged) return '';
     try { return localStorage.getItem(KEY_STORAGE) || ''; } catch { return ''; }
   };
   const setKey = (key) => {
+    if (serverManaged) {
+      state.keyPresent = false;
+      return;
+    }
     try {
       if (key) localStorage.setItem(KEY_STORAGE, key);
       else localStorage.removeItem(KEY_STORAGE);
@@ -41,7 +47,7 @@
       connect() { return Promise.resolve(false); },
       disconnect() { setKey(''); },
       probe() { return Promise.resolve({ ...state }); },
-      getState() { return { ...state, keyPresent: Boolean(getKey()) }; },
+      getState() { return { ...state, keyPresent: Boolean(getKey()), serverManaged }; },
       getKeyForTesting() { return getKey(); },
     };
     return;
@@ -78,7 +84,7 @@
     if (transport && ['AI ready','AI unavailable','AI retry next turn','starting','3D ready'].includes(transport.textContent)) {
       setNodeText(transport, 'Command engine');
     }
-    if (button && !button.disabled) setNodeText(button, state.keyPresent ? 'Reconnect Groq' : 'Connect Groq');
+    if (button && !button.disabled) setNodeText(button, serverManaged ? 'Groq unavailable' : state.keyPresent ? 'Reconnect Groq' : 'Connect Groq');
   }
 
   async function probe() {
@@ -93,23 +99,28 @@
       state.provider = data?.provider || null;
       state.keyStatus = data?.keyStatus || (key ? 'unknown' : 'missing_key');
       state.keyPresent = Boolean(key);
-      if (state.keyStatus === 'invalid_key') {
+      if (!serverManaged && state.keyStatus === 'invalid_key') {
         setKey('');
         state.keyPresent = false;
       }
       patchAgentStatus();
-      return { ...state };
+      return { ...state, serverManaged };
     } catch (error) {
       console.warn('Groq proxy probe failed:', error);
       state.backendOk = false;
       state.generative = false;
       state.keyStatus = 'probe_failed';
       patchAgentStatus();
-      return { ...state };
+      return { ...state, serverManaged };
     }
   }
 
   async function connect() {
+    if (serverManaged) {
+      const result = await probe();
+      if (result.generative) toast('Groq AI is connected by the demo server');
+      return result.generative;
+    }
     const existing = getKey();
     const entered = window.prompt(
       'Paste your Groq API key. It will be stored only in this browser and sent through the Nova backend proxy.\n\nCreate a free key at console.groq.com/keys',
@@ -151,14 +162,14 @@
       const method = String(init.method || (typeof input !== 'string' ? input?.method : 'GET') || 'GET').toUpperCase();
       const data = await response.clone().json().catch(() => null);
       if (method === 'POST' && data) {
-        if (data.generative === true || data.source === 'groq') {
+        if (data.generative === true || data.source === 'groq' || (data.fastPath === true && data.aiAvailable === true)) {
           state.generative = true;
           state.provider = data.provider || state.provider;
           state.keyStatus = 'valid';
         } else if (data.aiAvailable === false || data.fastFallback === true) {
           state.generative = false;
           state.keyStatus = data.fallbackReason || data.keyStatus || state.keyStatus;
-          if (state.keyStatus === 'invalid_key') setKey('');
+          if (!serverManaged && state.keyStatus === 'invalid_key') setKey('');
         }
         patchAgentStatus();
       }
@@ -188,13 +199,13 @@
   window.__NovaGroqAuth = {
     connect,
     disconnect() {
-      setKey('');
-      state.generative = false;
-      state.keyStatus = 'missing_key';
+      if (!serverManaged) setKey('');
+      state.generative = serverManaged ? state.generative : false;
+      state.keyStatus = serverManaged ? state.keyStatus : 'missing_key';
       patchAgentStatus();
     },
     probe,
-    getState() { return { ...state, keyPresent: Boolean(getKey()) }; },
+    getState() { return { ...state, keyPresent: Boolean(getKey()), serverManaged }; },
     getKeyForTesting() { return getKey(); },
   };
 })();

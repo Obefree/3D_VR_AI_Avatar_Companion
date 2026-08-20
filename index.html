@@ -74,7 +74,9 @@
         if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
           window.__NOVA_AI_ENDPOINT = './api/chat';
         } else {
-          window.__NOVA_AI_ENDPOINT = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq';
+          const groqEndpoint = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq-vault';
+          window.__NOVA_GROQ_PROXY = groqEndpoint;
+          window.__NOVA_AI_ENDPOINT = groqEndpoint;
         }
       }
     </script>
