@@ -80,7 +80,13 @@
     </script>
     <script src="./src/openrouter-auth.js"></script>
     <script src="./src/app.js"></script>
+    <script>window.__NOVA_PRIMARY_FETCH = window.fetch;</script>
     <script src="./src/embodiment.js"></script>
+    <script>
+      // embodiment.js still contains a legacy response interceptor from the old architecture.
+      // The active app executes actions centrally, so restore the primary authenticated fetch path.
+      if (window.__NOVA_PRIMARY_FETCH) window.fetch = window.__NOVA_PRIMARY_FETCH;
+    </script>
     <script src="./src/xr-controls.js"></script>
   </body>
 </html>
