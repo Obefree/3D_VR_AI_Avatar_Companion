@@ -57,10 +57,13 @@
   const toast = (text) => {
     const el = document.getElementById('toast');
     if (!el) return;
-    el.textContent = text;
+    if (el.textContent !== text) el.textContent = text;
     el.classList.add('show');
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => el.classList.remove('show'), 5200);
+  };
+  const setNodeText = (el, text) => {
+    if (el && el.textContent !== text) el.textContent = text;
   };
 
   function humanKeyStatus(status) {
@@ -193,33 +196,34 @@
     const button = document.getElementById('live-button');
 
     if (state.backendOk && state.generative) {
-      if (mode) mode.textContent = 'AI mode';
+      setNodeText(mode, 'AI mode');
       if (connection) {
-        connection.textContent = 'AI ready';
+        setNodeText(connection, 'AI ready');
         connection.classList.remove('muted');
       }
       if (transport && ['Command engine', 'AI unavailable', 'AI retry next turn', 'starting', '3D ready'].includes(transport.textContent)) {
-        transport.textContent = state.provider ? `AI: ${state.provider}` : 'AI ready';
+        setNodeText(transport, state.provider ? `AI: ${state.provider}` : 'AI ready');
       }
-      if (button && !button.disabled) button.textContent = 'AI connected';
+      if (button && !button.disabled) setNodeText(button, 'AI connected');
       return;
     }
 
     if (!state.backendOk) return;
-    if (mode) mode.textContent = 'Agent mode';
+    setNodeText(mode, 'Agent mode');
     if (connection) {
-      connection.textContent = humanKeyStatus(state.keyStatus);
+      setNodeText(connection, humanKeyStatus(state.keyStatus));
       connection.classList.remove('muted');
     }
     if (transport && ['AI ready', 'AI unavailable', 'AI retry next turn', 'starting', '3D ready'].includes(transport.textContent)) {
-      transport.textContent = state.keyStatus === 'missing_key' ? 'Command engine' : `OpenRouter: ${state.keyStatus}`;
+      setNodeText(transport, state.keyStatus === 'missing_key' ? 'Command engine' : `OpenRouter: ${state.keyStatus}`);
     }
     if (button && !button.disabled) {
-      button.textContent = state.keyStatus === 'invalid_key' || state.keyStatus === 'missing_key' || !state.keyPresent
+      const label = state.keyStatus === 'invalid_key' || state.keyStatus === 'missing_key' || !state.keyPresent
         ? (state.keyPresent ? 'Reconnect OpenRouter' : 'Connect OpenRouter')
         : state.keyStatus === 'quota_exhausted'
           ? 'Reconnect OpenRouter'
           : 'Connect Live AI';
+      setNodeText(button, label);
     }
   }
 
@@ -232,12 +236,12 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     button.disabled = true;
-    button.textContent = 'Opening OpenRouter…';
+    setNodeText(button, 'Opening OpenRouter…');
     try { await startOAuth(); }
     catch (error) {
       console.error('OpenRouter OAuth start failed:', error);
       button.disabled = false;
-      button.textContent = state.keyPresent ? 'Reconnect OpenRouter' : 'Connect OpenRouter';
+      setNodeText(button, state.keyPresent ? 'Reconnect OpenRouter' : 'Connect OpenRouter');
       toast('Could not start OpenRouter authorization.');
     }
   }, true);
