@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "npx serve . -l 4173",
-    "check": "node --check src/app.js && node --check src/scene.js && node --check api/chat.js && node --check tests/e2e-v2.mjs && node --check tests/real-backend-smoke.mjs",
+    "check": "node --check src/app.js && node --check src/scene.js && node --check api/chat.js && node --check tests/e2e-v2.mjs && node --check tests/real-backend-smoke.mjs && node --check tests/public-url-smoke.mjs",
     "test:e2e": "node tests/e2e-v2.mjs",
     "test:real": "node tests/real-backend-smoke.mjs",
-    "verify": "npm run check && npm run test:e2e && npm run test:real"
+    "test:public": "node tests/public-url-smoke.mjs",
+    "verify": "npm run check && npm run test:e2e && npm run test:real && npm run test:public"
   },
   "dependencies": {
     "ai": "^6.0.0"

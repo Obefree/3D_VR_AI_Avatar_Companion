@@ -37,3 +37,6 @@ jobs:
 
       - name: Real AI backend mobile smoke
         run: npm run test:real
+
+      - name: Immutable public URL mobile smoke
+        run: npm run test:public
