@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
-const PUBLIC_URL = 'https://raw.githack.com/Obefree/3D_VR_AI_Avatar_Companion/f0d86bb8daad1935e30fab9cecc26d33d7798d3b/index.html';
+const PUBLIC_URL = 'https://htmlpreview.github.io/?https://raw.githubusercontent.com/Obefree/3D_VR_AI_Avatar_Companion/f0d86bb8daad1935e30fab9cecc26d33d7798d3b/index.html';
 
 let browser;
 try {
