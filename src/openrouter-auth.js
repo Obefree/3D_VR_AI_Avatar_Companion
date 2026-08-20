@@ -6,6 +6,7 @@
   const VERIFIER_STORAGE = 'nova_openrouter_pkce_verifier_v1';
   const nativeFetch = window.fetch.bind(window);
   const state = { backendOk: false, generative: false, provider: null, keyPresent: false, callbackHandled: false };
+  const active = String(window.__NOVA_AI_ENDPOINT || '').includes('nova-openrouter');
 
   const getKey = () => {
     try { return localStorage.getItem(KEY_STORAGE) || ''; } catch { return ''; }
@@ -17,6 +18,19 @@
     } catch {}
     state.keyPresent = Boolean(key);
   };
+
+  if (!active) {
+    window.__NOVA_AUTH_READY = Promise.resolve({ ...state });
+    window.__NovaOpenRouterAuth = {
+      connect() { return Promise.resolve(false); },
+      disconnect() { setKey(''); },
+      probe() { return Promise.resolve({ ...state }); },
+      getState() { return { ...state, keyPresent: Boolean(getKey()) }; },
+      getKeyForTesting() { return getKey(); },
+    };
+    return;
+  }
+
   const base64url = (bytes) => {
     let binary = '';
     for (const byte of bytes) binary += String.fromCharCode(byte);
