@@ -30,6 +30,31 @@
     return true;
   }
 
+  function enhanceVrEntry(scene) {
+    if (!scene?.enterXR || scene.__novaOriginalEnterXR || !navigator.xr) return;
+    const originalEnterXR = scene.enterXR.bind(scene);
+    scene.__novaOriginalEnterXR = originalEnterXR;
+
+    scene.enterXR = async () => {
+      const arSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+      if (arSupported) return originalEnterXR();
+
+      const vrSupported = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+      if (!vrSupported) return originalEnterXR();
+
+      const session = await navigator.xr.requestSession('immersive-vr', {
+        optionalFeatures: ['local-floor', 'hand-tracking', 'dom-overlay'],
+        domOverlay: { root: document.body },
+      });
+      scene.isXR = true;
+      session.addEventListener('end', () => {
+        scene.isXR = false;
+      }, { once: true });
+      await scene.renderer.xr.setSession(session);
+      return 'immersive-vr';
+    };
+  }
+
   function bindSessionEnd(scene, button, session) {
     if (!session?.addEventListener || session.__novaExitBound) return;
     session.__novaExitBound = true;
@@ -62,6 +87,7 @@
     const button = document.getElementById('xr-button');
     if (!scene || !button || button.dataset.xrToggleBound === '1') return false;
     configureScene(scene);
+    enhanceVrEntry(scene);
     button.dataset.xrToggleBound = '1';
 
     button.addEventListener('click', async (event) => {
