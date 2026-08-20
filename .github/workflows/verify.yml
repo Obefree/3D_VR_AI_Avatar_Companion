@@ -41,6 +41,9 @@ jobs:
       - name: OpenRouter OAuth PKCE smoke
         run: npm run test:oauth
 
+      - name: Compound AI tool execution smoke
+        run: npm run test:compound
+
       - name: Real AI backend mobile smoke
         run: npm run test:real
 
