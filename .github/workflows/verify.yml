@@ -32,5 +32,8 @@ jobs:
       - name: Syntax checks
         run: npm run check
 
-      - name: Mobile end-to-end verification
+      - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
+
+      - name: Real AI backend mobile smoke
+        run: npm run test:real
