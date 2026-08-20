@@ -70,7 +70,10 @@
     </div>
 
     <script>
-      if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+      if (
+        !window.__NOVA_AI_ENDPOINT &&
+        (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+      ) {
         window.__NOVA_AI_ENDPOINT = './api/chat';
       }
     </script>
