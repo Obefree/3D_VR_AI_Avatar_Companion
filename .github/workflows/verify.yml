@@ -38,16 +38,13 @@ jobs:
       - name: Transient AI reconnect regression
         run: npm run test:reconnect
 
-      - name: OpenRouter OAuth PKCE smoke
-        run: npm run test:oauth
-
-      - name: OpenRouter invalid-key reconnect smoke
-        run: npm run test:auth-reconnect
+      - name: Groq key connection and reconnect smoke
+        run: npm run test:groq
 
       - name: Compound AI tool execution smoke
         run: npm run test:compound
 
-      - name: Real AI backend mobile smoke
+      - name: Real backend mobile smoke
         run: npm run test:real
 
       - name: Immutable public URL mobile smoke

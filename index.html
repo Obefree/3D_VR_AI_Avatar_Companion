@@ -26,19 +26,19 @@
           <h1>Embodied realtime AI for games, VR and AR</h1>
         </div>
         <div class="status-row">
-          <span id="mode-pill" class="pill">Demo mode</span>
-          <span id="connection-pill" class="pill muted">Offline</span>
+          <span id="mode-pill" class="pill">Agent mode</span>
+          <span id="connection-pill" class="pill muted">Starting</span>
         </div>
       </header>
 
       <section class="controls glass">
         <div class="button-row">
-          <button id="live-button" class="primary" type="button">Connect Live AI</button>
+          <button id="live-button" class="primary" type="button">Connect Groq</button>
           <button id="voice-demo-button" type="button">Talk to Nova</button>
           <button id="demo-button" type="button">Run guided demo</button>
           <button id="xr-button" class="hidden" type="button">Enter XR</button>
         </div>
-        <p class="hint">Talk naturally to Nova. It can act with its body, understand the room, and create, move or remove simple scene objects.</p>
+        <p class="hint">Talk naturally to Nova. Scene commands work locally through the agent core; Groq adds free-form conversation and complex multi-action understanding.</p>
         <div class="prompt-row">
           <input id="text-input" type="text" autocomplete="off" placeholder="Try: Raise your left hand or create a blue cube" />
           <button id="send-button" type="button">Send</button>
@@ -74,17 +74,16 @@
         if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
           window.__NOVA_AI_ENDPOINT = './api/chat';
         } else {
-          window.__NOVA_AI_ENDPOINT = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-openrouter';
+          window.__NOVA_AI_ENDPOINT = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq';
         }
       }
     </script>
-    <script src="./src/openrouter-auth.js"></script>
+    <script src="./src/groq-auth.js"></script>
     <script src="./src/app.js"></script>
     <script>window.__NOVA_PRIMARY_FETCH = window.fetch;</script>
     <script src="./src/embodiment.js"></script>
     <script>
-      // embodiment.js still contains a legacy response interceptor from the old architecture.
-      // The active app executes actions centrally, so restore the primary authenticated fetch path.
+      // The active app executes actions centrally. Keep the authenticated Groq fetch path primary.
       if (window.__NOVA_PRIMARY_FETCH) window.fetch = window.__NOVA_PRIMARY_FETCH;
     </script>
     <script src="./src/xr-controls.js"></script>
