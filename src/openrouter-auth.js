@@ -5,7 +5,15 @@
   const KEY_STORAGE = 'nova_openrouter_key_v1';
   const VERIFIER_STORAGE = 'nova_openrouter_pkce_verifier_v1';
   const nativeFetch = window.fetch.bind(window);
-  const state = { backendOk: false, generative: false, provider: null, keyPresent: false, callbackHandled: false };
+  const state = {
+    backendOk: false,
+    generative: false,
+    provider: null,
+    keyPresent: false,
+    keyStatus: 'unknown',
+    limitRemaining: null,
+    callbackHandled: false,
+  };
   const active = String(window.__NOVA_AI_ENDPOINT || '').includes('nova-openrouter');
 
   const getKey = () => {
@@ -55,6 +63,17 @@
     toast.timer = setTimeout(() => el.classList.remove('show'), 5200);
   };
 
+  function humanKeyStatus(status) {
+    switch (status) {
+      case 'missing_key': return 'OpenRouter disconnected';
+      case 'invalid_key': return 'OpenRouter key expired';
+      case 'quota_exhausted': return 'OpenRouter quota exhausted';
+      case 'rate_limited': return 'OpenRouter rate limited';
+      case 'timeout': return 'OpenRouter check timed out';
+      default: return 'Core ready';
+    }
+  }
+
   async function exchangeCallback() {
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
@@ -63,6 +82,7 @@
     try { verifier = sessionStorage.getItem(VERIFIER_STORAGE) || ''; } catch {}
     if (!verifier) {
       state.callbackHandled = true;
+      state.keyStatus = 'missing_verifier';
       toast('OpenRouter authorization returned without a PKCE verifier. Please connect again.');
       return false;
     }
@@ -76,14 +96,16 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.key) throw new Error(data?.error?.message || data?.error || `OpenRouter exchange failed (${response.status})`);
       setKey(String(data.key));
+      state.keyStatus = 'checking';
       try { sessionStorage.removeItem(VERIFIER_STORAGE); } catch {}
       history.replaceState({}, document.title, callbackUrl());
       state.callbackHandled = true;
-      toast('OpenRouter Free connected');
+      toast('OpenRouter connected. Verifying key…');
       return true;
     } catch (error) {
       console.error('OpenRouter OAuth exchange failed:', error);
       state.callbackHandled = true;
+      state.keyStatus = 'exchange_failed';
       toast('OpenRouter connection failed. Please try Connect Live AI again.');
       return false;
     }
@@ -99,12 +121,22 @@
       state.backendOk = response.ok && data?.ok === true;
       state.generative = state.backendOk && data?.generative === true;
       state.provider = data?.provider || null;
+      state.keyStatus = data?.keyStatus || (key ? 'unknown' : 'missing_key');
+      state.limitRemaining = Number.isFinite(Number(data?.limitRemaining)) ? Number(data.limitRemaining) : null;
       state.keyPresent = Boolean(key);
+
+      if (state.keyStatus === 'invalid_key') {
+        setKey('');
+        state.keyPresent = false;
+      }
+      patchAgentStatus();
       return { ...state };
     } catch (error) {
       console.warn('OpenRouter proxy probe failed:', error);
       state.backendOk = false;
       state.generative = false;
+      state.keyStatus = 'probe_failed';
+      patchAgentStatus();
       return { ...state };
     }
   }
@@ -123,8 +155,10 @@
   }
 
   const authReady = (async () => {
-    await exchangeCallback();
+    const returned = await exchangeCallback();
     await probe();
+    if (returned && state.generative) toast('OpenRouter AI verified and ready');
+    else if (returned && !state.generative) toast(`OpenRouter connected, but AI is unavailable: ${state.keyStatus}`);
     return { ...state };
   })();
   window.__NOVA_AUTH_READY = authReady;
@@ -135,22 +169,58 @@
     const headers = new Headers(init.headers || (typeof input !== 'string' ? input?.headers : undefined) || {});
     const key = getKey();
     if (key) headers.set('X-OpenRouter-Key', key);
-    return nativeFetch(input, { ...init, headers });
+    const response = await nativeFetch(input, { ...init, headers });
+
+    try {
+      const method = String(init.method || (typeof input !== 'string' ? input?.method : 'GET') || 'GET').toUpperCase();
+      if (method === 'POST') {
+        const data = await response.clone().json().catch(() => null);
+        if (data?.requiresReauth) {
+          state.generative = false;
+          state.keyStatus = data?.fallbackReason || 'invalid_key';
+          if (state.keyStatus === 'invalid_key') setKey('');
+          patchAgentStatus();
+        }
+      }
+    } catch {}
+    return response;
   };
 
   function patchAgentStatus() {
-    if (!state.backendOk || state.generative) return;
     const mode = document.getElementById('mode-pill');
     const connection = document.getElementById('connection-pill');
     const transport = document.getElementById('transport-state');
     const button = document.getElementById('live-button');
-    if (mode && ['AI mode', 'Demo mode'].includes(mode.textContent)) mode.textContent = 'Agent mode';
-    if (connection && ['AI ready', 'Connected', 'Offline'].includes(connection.textContent)) {
-      connection.textContent = 'Core ready';
+
+    if (state.backendOk && state.generative) {
+      if (mode) mode.textContent = 'AI mode';
+      if (connection) {
+        connection.textContent = 'AI ready';
+        connection.classList.remove('muted');
+      }
+      if (transport && ['Command engine', 'AI unavailable', 'AI retry next turn', 'starting', '3D ready'].includes(transport.textContent)) {
+        transport.textContent = state.provider ? `AI: ${state.provider}` : 'AI ready';
+      }
+      if (button && !button.disabled) button.textContent = 'AI connected';
+      return;
+    }
+
+    if (!state.backendOk) return;
+    if (mode) mode.textContent = 'Agent mode';
+    if (connection) {
+      connection.textContent = humanKeyStatus(state.keyStatus);
       connection.classList.remove('muted');
     }
-    if (transport && ['AI ready', 'AI unavailable', 'AI retry next turn'].includes(transport.textContent)) transport.textContent = 'Command engine';
-    if (button && button.textContent === 'AI connected') button.textContent = 'Connect Live AI';
+    if (transport && ['AI ready', 'AI unavailable', 'AI retry next turn', 'starting', '3D ready'].includes(transport.textContent)) {
+      transport.textContent = state.keyStatus === 'missing_key' ? 'Command engine' : `OpenRouter: ${state.keyStatus}`;
+    }
+    if (button && !button.disabled) {
+      button.textContent = state.keyStatus === 'invalid_key' || state.keyStatus === 'missing_key' || !state.keyPresent
+        ? (state.keyPresent ? 'Reconnect OpenRouter' : 'Connect OpenRouter')
+        : state.keyStatus === 'quota_exhausted'
+          ? 'Reconnect OpenRouter'
+          : 'Connect Live AI';
+    }
   }
 
   document.addEventListener('click', async (event) => {
@@ -167,7 +237,7 @@
     catch (error) {
       console.error('OpenRouter OAuth start failed:', error);
       button.disabled = false;
-      button.textContent = 'Connect Live AI';
+      button.textContent = state.keyPresent ? 'Reconnect OpenRouter' : 'Connect OpenRouter';
       toast('Could not start OpenRouter authorization.');
     }
   }, true);
@@ -180,7 +250,12 @@
 
   window.__NovaOpenRouterAuth = {
     connect: startOAuth,
-    disconnect() { setKey(''); state.generative = false; patchAgentStatus(); },
+    disconnect() {
+      setKey('');
+      state.generative = false;
+      state.keyStatus = 'missing_key';
+      patchAgentStatus();
+    },
     probe,
     getState() { return { ...state, keyPresent: Boolean(getKey()) }; },
     getKeyForTesting() { return getKey(); },
