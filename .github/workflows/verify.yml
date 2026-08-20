@@ -35,6 +35,9 @@ jobs:
       - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
 
+      - name: Transient AI reconnect regression
+        run: npm run test:reconnect
+
       - name: Real AI backend mobile smoke
         run: npm run test:real
 
