@@ -41,6 +41,9 @@ jobs:
       - name: OpenRouter OAuth PKCE smoke
         run: npm run test:oauth
 
+      - name: OpenRouter invalid-key reconnect smoke
+        run: npm run test:auth-reconnect
+
       - name: Compound AI tool execution smoke
         run: npm run test:compound
 
