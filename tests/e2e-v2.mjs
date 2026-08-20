@@ -296,8 +296,13 @@ try {
     'conversation history was not sent with pronoun follow-up',
   );
 
-  // B3. State-aware next step.
+  // B3. State-aware next step. Wait for the actual scene actions, not only transcript rendering.
   await sendViaUI('Что дальше?');
+  await page.waitForFunction(
+    () => window.__novaScene.lookTarget === 'filter' && window.__novaScene.pointTarget === 'filter',
+    null,
+    { timeout: 5000 },
+  );
   state = await page.evaluate(() => ({
     look: window.__novaScene.lookTarget,
     point: window.__novaScene.pointTarget,
