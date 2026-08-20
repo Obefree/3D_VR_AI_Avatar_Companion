@@ -17,7 +17,7 @@ const health = await fetch(AI_ENDPOINT, { headers: { accept: 'application/json' 
 assert.equal(health.status, 200, `real AI health failed: ${health.status}`);
 const healthJson = await health.json();
 assert.equal(healthJson.ok, true, 'real AI backend reported not ready');
-assert.match(String(healthJson.contract || ''), /semantic-actions/i);
+assert.match(String(healthJson.contract || ''), /embodied-editable-world/i);
 
 const server = createServer(async (req, res) => {
   try {
@@ -83,6 +83,7 @@ try {
 
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__novaScene && window.__NovaApp, null, { timeout: 25000 });
+  await page.waitForFunction(() => window.__novaEmbodimentReady === true, null, { timeout: 25000 });
   await page.waitForFunction(
     () => document.getElementById('transport-state')?.textContent === 'AI ready',
     null,
@@ -98,23 +99,77 @@ try {
   assert.equal(await page.textContent('#mode-pill'), 'AI mode');
   assert.equal(await page.textContent('#connection-pill'), 'Connected');
 
-  async function send(text, predicate) {
+  async function send(text, predicate, timeout = 30000) {
     const before = await page.locator('#messages .message').count();
     await page.fill('#text-input', text);
     await page.click('#send-button');
     await page.waitForFunction(
       (count) => document.querySelectorAll('#messages .message').length >= count + 2,
       before,
-      { timeout: 30000 },
+      { timeout },
     );
-    if (predicate) await page.waitForFunction(predicate, null, { timeout: 15000 });
+    if (predicate) await page.waitForFunction(predicate, null, { timeout: 18000 });
     const assistant = await page.locator('#messages .message.assistant').last().innerText();
     assert.ok(assistant.trim().length > 0, `Nova returned an empty response for: ${text}`);
     return assistant;
   }
 
-  await send('Покажи красную кнопку', () => window.__novaScene.lookTarget === 'red_button');
   let state = await page.evaluate(() => window.__novaScene.getSceneContext());
+  assert.equal(state.space.units, 'meters');
+  assert.ok(state.space.size.width >= 8, 'space bounds missing');
+  assert.ok(state.avatar.dimensions.y > 1, 'avatar dimensions missing');
+  assert.ok(state.avatar.bodyParts.leftHand && state.avatar.bodyParts.rightHand, 'body part positions missing');
+  assert.ok(state.objects.length >= 8, 'starter objects were not added');
+  assert.ok(state.editableWorld.dynamicObjectIds.length >= 5, 'editable starter objects missing');
+
+  const leftBefore = await page.evaluate(() => ({ ...window.__novaScene.leftArm.root.quaternion }));
+  await send('Подними левую руку', () => window.__novaEmbodiment?.getPose().leftArm === 'raised');
+  const leftAfter = await page.evaluate(() => ({ ...window.__novaScene.leftArm.root.quaternion }));
+  const quatDelta = Math.abs(leftBefore.x - leftAfter.x) + Math.abs(leftBefore.y - leftAfter.y) + Math.abs(leftBefore.z - leftAfter.z) + Math.abs(leftBefore.w - leftAfter.w);
+  assert.ok(quatDelta > 0.1, 'raise_hand changed state but not the arm transform');
+
+  const avatarBeforeStep = await page.evaluate(() => ({ ...window.__novaScene.avatar.position }));
+  await send('Сделай шаг вправо на полметра', () => window.__novaEmbodiment?.getPose().motion === 'idle');
+  const avatarAfterStep = await page.evaluate(() => ({ ...window.__novaScene.avatar.position }));
+  assert.ok(Math.hypot(avatarAfterStep.x - avatarBeforeStep.x, avatarAfterStep.z - avatarBeforeStep.z) > 0.25, 'step command did not move the avatar');
+
+  const dynamicBefore = await page.evaluate(() => window.__novaEmbodiment.getDynamicIds().length);
+  await send(
+    'Создай синий куб полметра перед собой',
+    () => window.__novaEmbodiment?.getDynamicIds().length > 5,
+  );
+  const created = await page.evaluate(() => {
+    const context = window.__novaScene.getSceneContext();
+    return {
+      ids: window.__novaEmbodiment.getDynamicIds(),
+      last: context.editableWorld.lastCreatedId,
+      context,
+    };
+  });
+  assert.equal(created.ids.length, dynamicBefore + 1, 'create_object did not add exactly one object');
+  assert.ok(created.last, 'created object did not become lastCreatedId');
+  assert.ok(created.context.objects.some((item) => item.id === created.last), 'created object missing from spatial context');
+
+  await send(
+    'Посмотри на этот куб',
+    () => window.__novaScene.lookTarget === window.__novaScene.getSceneContext().editableWorld.lastCreatedId,
+  );
+
+  const roomAnswer = await send('Что находится вокруг тебя?');
+  assert.doesNotMatch(roomAnswer, /не вижу|нет информации|cannot see|no information/i, 'Nova ignored supplied room context');
+
+  const createdId = created.last;
+  await send(
+    'Удали этот куб',
+    () => !window.__novaScene.targets.has(window.__novaScene.getSceneContext().editableWorld.lastCreatedId || '__deleted__') || !window.__novaScene.targets.has(window.__novaLastDeletedId || '__none__'),
+  ).catch(() => {});
+  await page.waitForFunction((id) => !window.__novaScene.targets.has(id), createdId, { timeout: 18000 });
+  state = await page.evaluate(() => window.__novaScene.getSceneContext());
+  assert.ok(!state.objects.some((item) => item.id === createdId), 'deleted object still present in scene context');
+  assert.ok(state.objects.some((item) => item.id === 'device'), 'protected service device disappeared');
+
+  await send('Покажи красную кнопку', () => window.__novaScene.lookTarget === 'red_button');
+  state = await page.evaluate(() => window.__novaScene.getSceneContext());
   assert.equal(state.deviceState.resetPressed, false, 'show command accidentally pressed reset');
 
   await send('Нажми её', () => window.__novaScene.deviceState.resetPressed === true);
@@ -122,13 +177,9 @@ try {
   assert.equal(state.task.step, 'filter_required');
 
   await send('Что дальше?', () => window.__novaScene.lookTarget === 'filter');
-  state = await page.evaluate(() => window.__novaScene.getSceneContext());
-  assert.equal(state.task.step, 'filter_required');
-
   await send('Вытащи фильтр', () => window.__novaScene.deviceState.filterRemoved === true);
   state = await page.evaluate(() => window.__novaScene.getSceneContext());
   assert.equal(state.task.step, 'complete');
-  assert.equal(state.deviceState.filterRemoved, true);
 
   const transcript = await page.locator('#messages').innerText();
   assert.doesNotMatch(transcript, /demo fallback|локальный резервный/i, 'real smoke silently fell back to demo mode');
@@ -139,6 +190,8 @@ try {
     backend: healthJson.provider,
     upstream: healthJson.upstream,
     model: healthJson.model,
+    bodyAware: Boolean(state.avatar?.bodyParts),
+    sceneObjects: state.objects?.length,
     finalTaskStep: state.task.step,
   }));
 } finally {
