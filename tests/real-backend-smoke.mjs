@@ -122,10 +122,10 @@ try {
   assert.ok(state.objects.length >= 8, 'starter objects were not added');
   assert.ok(state.editableWorld.dynamicObjectIds.length >= 5, 'editable starter objects missing');
 
-  const leftBefore = await page.evaluate(() => ({ ...window.__novaScene.leftArm.root.quaternion }));
+  const leftBefore = await page.evaluate(() => window.__novaScene.leftArm.root.quaternion.toArray());
   await send('Подними левую руку', () => window.__novaEmbodiment?.getPose().leftArm === 'raised');
-  const leftAfter = await page.evaluate(() => ({ ...window.__novaScene.leftArm.root.quaternion }));
-  const quatDelta = Math.abs(leftBefore.x - leftAfter.x) + Math.abs(leftBefore.y - leftAfter.y) + Math.abs(leftBefore.z - leftAfter.z) + Math.abs(leftBefore.w - leftAfter.w);
+  const leftAfter = await page.evaluate(() => window.__novaScene.leftArm.root.quaternion.toArray());
+  const quatDelta = leftBefore.reduce((sum, value, index) => sum + Math.abs(value - leftAfter[index]), 0);
   assert.ok(quatDelta > 0.1, 'raise_hand changed state but not the arm transform');
 
   const avatarBeforeStep = await page.evaluate(() => ({ ...window.__novaScene.avatar.position }));
@@ -159,10 +159,7 @@ try {
   assert.doesNotMatch(roomAnswer, /не вижу|нет информации|cannot see|no information/i, 'Nova ignored supplied room context');
 
   const createdId = created.last;
-  await send(
-    'Удали этот куб',
-    () => !window.__novaScene.targets.has(window.__novaScene.getSceneContext().editableWorld.lastCreatedId || '__deleted__') || !window.__novaScene.targets.has(window.__novaLastDeletedId || '__none__'),
-  ).catch(() => {});
+  await send('Удали этот куб');
   await page.waitForFunction((id) => !window.__novaScene.targets.has(id), createdId, { timeout: 18000 });
   state = await page.evaluate(() => window.__novaScene.getSceneContext());
   assert.ok(!state.objects.some((item) => item.id === createdId), 'deleted object still present in scene context');
