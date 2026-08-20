@@ -11,6 +11,9 @@
     'face_user',
   ]);
   const TARGETS = new Set(['device', 'red_button', 'filter']);
+  const AI_ENDPOINT =
+    window.__NOVA_AI_ENDPOINT ||
+    'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-chat';
 
   let scene = createFallbackScene();
   let cloudAiReady = false;
@@ -232,7 +235,7 @@
   }
 
   async function requestAI({ message, history, toolResults = [], phase = 'initial' }) {
-    const response = await fetch('./api/chat', {
+    const response = await fetch(AI_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -276,7 +279,7 @@
         phase,
       });
 
-      let toolResults = await executeActions(reply.actions);
+      const toolResults = await executeActions(reply.actions);
       const failed = toolResults.filter(({ result }) => !result?.ok);
 
       if (failed.length) {
@@ -405,7 +408,7 @@
 
   async function detectCloudAI(explicit = false) {
     try {
-      const response = await fetch('./api/chat', { method: 'GET', cache: 'no-store' });
+      const response = await fetch(AI_ENDPOINT, { method: 'GET', cache: 'no-store' });
       if (!response.ok) throw new Error(`AI health ${response.status}`);
       const data = await response.json().catch(() => null);
       if (!data?.ok) throw new Error('AI backend not ready');
