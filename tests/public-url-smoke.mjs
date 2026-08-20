@@ -4,17 +4,8 @@ import { chromium } from 'playwright';
 const PUBLIC_REF = process.env.PUBLIC_REF || process.env.GITHUB_SHA || 'main';
 const PUBLIC_URL = `https://cdn.githubraw.com/Obefree/3D_VR_AI_Avatar_Companion/${PUBLIC_REF}/index.html`;
 
-let browser;
-try {
-  browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    hasTouch: true,
-    isMobile: true,
-    locale: 'ru-RU',
-  });
-
-  await context.addInitScript(() => {
+function addSpeechMocks(context) {
+  return context.addInitScript(() => {
     class MockUtterance {
       constructor(text) {
         this.text = text;
@@ -29,6 +20,18 @@ try {
       value: { cancel() {}, speak(u) { setTimeout(() => u.onend?.(), 10); } },
     });
   });
+}
+
+let browser;
+try {
+  browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+    locale: 'ru-RU',
+  });
+  await addSpeechMocks(context);
 
   const page = await context.newPage();
   const errors = [];
@@ -44,6 +47,8 @@ try {
   await page.waitForFunction(() => document.getElementById('mode-pill')?.textContent === 'Agent mode', null, { timeout: 20000 });
   await page.waitForFunction(() => document.getElementById('transport-state')?.textContent === 'Command engine', null, { timeout: 20000 });
   assert.equal(await page.evaluate(() => window.__NovaOpenRouterAuth.getState().generative), false, 'public unauthenticated build unexpectedly reports generative AI');
+  assert.equal(await page.evaluate(() => window.__NovaOpenRouterAuth.getState().keyStatus), 'missing_key');
+  assert.match(await page.locator('#live-button').innerText(), /Connect OpenRouter/i);
 
   async function send(text, predicate, timeout = 35000) {
     const before = await page.locator('#messages .message').count();
@@ -83,11 +88,42 @@ try {
   state = await page.evaluate(() => window.__novaScene.getSceneContext());
   assert.equal(state.task.step, 'complete');
 
+  const freeBefore = await page.locator('#messages .message').count();
+  await page.fill('#text-input', 'Расскажи что-нибудь свободно');
+  await page.click('#send-button');
+  await page.waitForFunction((count) => document.querySelectorAll('#messages .message').length >= count + 2, freeBefore, { timeout: 18000 });
+  assert.match(await page.locator('#messages .message.assistant').last().innerText(), /OpenRouter не подключён|Connect OpenRouter/i);
+
   const transcript = await page.locator('#messages').innerText();
   assert.doesNotMatch(transcript, /demo fallback|локальный резервный/i);
   assert.equal(errors.length, 0, `public browser errors: ${errors.join(' | ')}`);
+  await context.close();
+
+  const invalidContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+    locale: 'ru-RU',
+  });
+  await addSpeechMocks(invalidContext);
+  await invalidContext.addInitScript(() => {
+    localStorage.setItem('nova_openrouter_key_v1', 'sk-or-v1-invalid-public-smoke');
+  });
+  const invalidPage = await invalidContext.newPage();
+  const invalidErrors = [];
+  invalidPage.on('pageerror', (e) => invalidErrors.push(e.message));
+  invalidPage.on('console', (msg) => { if (msg.type() === 'error') invalidErrors.push(msg.text()); });
+  await invalidPage.goto(PUBLIC_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await invalidPage.waitForFunction(() => window.__NovaOpenRouterAuth?.getState().backendOk === true, null, { timeout: 20000 });
+  await invalidPage.waitForFunction(() => window.__NovaOpenRouterAuth?.getState().keyStatus === 'invalid_key', null, { timeout: 20000 });
+  assert.equal(await invalidPage.evaluate(() => window.__NovaOpenRouterAuth.getState().keyPresent), false, 'invalid OpenRouter key was not cleared');
+  assert.equal(await invalidPage.locator('#mode-pill').innerText(), 'Agent mode');
+  assert.match(await invalidPage.locator('#live-button').innerText(), /Connect OpenRouter/i);
+  assert.equal(invalidErrors.length, 0, `invalid-key browser errors: ${invalidErrors.join(' | ')}`);
+  await invalidContext.close();
 
   console.log('PUBLIC_URL_SMOKE_PASS');
+  console.log('PUBLIC_OPENROUTER_KEY_STATE_PASS');
   console.log(PUBLIC_URL);
 } finally {
   await browser?.close();
