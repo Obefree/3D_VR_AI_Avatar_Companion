@@ -113,7 +113,8 @@ try {
 
   const transcript = await page.locator('#messages').innerText();
   assert.doesNotMatch(transcript, /локальный резервный режим|local fallback/i, 'transient failure leaked into permanent fallback');
-  assert.equal(errors.length, 0, `browser errors: ${errors.join(' | ')}`);
+  const unexpectedErrors = errors.filter((message) => !/503|Service Unavailable/i.test(message));
+  assert.equal(unexpectedErrors.length, 0, `unexpected browser errors: ${unexpectedErrors.join(' | ')}`);
 
   console.log('RECONNECT_SMOKE_PASS');
   console.log(JSON.stringify({ healthCount, postCount, aiState: await page.evaluate(() => window.__NovaApp.getAIState()) }));
