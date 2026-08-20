@@ -13,7 +13,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -37,6 +37,9 @@ jobs:
 
       - name: Transient AI reconnect regression
         run: npm run test:reconnect
+
+      - name: OpenRouter OAuth PKCE smoke
+        run: npm run test:oauth
 
       - name: Real AI backend mobile smoke
         run: npm run test:real

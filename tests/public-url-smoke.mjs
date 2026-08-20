@@ -38,12 +38,12 @@ try {
   const response = await page.goto(PUBLIC_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
   assert.ok(response, 'public URL returned no response');
   assert.ok(response.status() >= 200 && response.status() < 400, `public URL HTTP ${response.status()}`);
-  await page.waitForFunction(() => window.__NovaApp && window.__novaScene, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__NovaApp && window.__novaScene && window.__NovaOpenRouterAuth, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaEmbodimentReady === true, null, { timeout: 30000 });
-  await page.waitForFunction(() => document.getElementById('transport-state')?.textContent === 'AI ready', null, { timeout: 20000 });
-
-  await page.click('#live-button');
-  await page.waitForFunction(() => document.getElementById('live-button')?.textContent === 'AI connected', null, { timeout: 10000 });
+  await page.waitForFunction(() => window.__NovaOpenRouterAuth.getState().backendOk === true, null, { timeout: 20000 });
+  await page.waitForFunction(() => document.getElementById('mode-pill')?.textContent === 'Agent mode', null, { timeout: 20000 });
+  await page.waitForFunction(() => document.getElementById('transport-state')?.textContent === 'Command engine', null, { timeout: 20000 });
+  assert.equal(await page.evaluate(() => window.__NovaOpenRouterAuth.getState().generative), false, 'public unauthenticated build unexpectedly reports generative AI');
 
   async function send(text, predicate, timeout = 35000) {
     const before = await page.locator('#messages .message').count();
