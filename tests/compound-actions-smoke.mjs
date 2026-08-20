@@ -9,25 +9,28 @@ const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf
 let postCount = 0;
 
 function sendJson(res, body) {
-  res.writeHead(200, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store', 'access-control-allow-origin':'*' });
+  res.writeHead(200, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store', 'access-control-allow-origin':'*', 'access-control-allow-headers':'*' });
   res.end(JSON.stringify(body));
 }
 
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://127.0.0.1');
-    if (url.pathname === '/nova-openrouter') {
-      if (req.method === 'GET') return sendJson(res, { ok:true, provider:'google/gemma-4-26b-a4b-it:free', generative:true, oauthAvailable:true, contract:'embodied-gemma4-fast-v1' });
+    if (url.pathname === '/nova-groq') {
+      const key = String(req.headers['x-groq-key'] || '');
+      if (req.method === 'GET') return sendJson(res, { ok:true, provider:key ? 'qwen/qwen3.6-27b' : 'supabase-command-engine', generative:Boolean(key), keyStatus:key ? 'valid' : 'missing_key', contract:'embodied-groq-v1' });
       if (req.method === 'POST') {
         postCount += 1;
         let raw=''; for await (const chunk of req) raw += chunk;
         const body = JSON.parse(raw || '{}');
         assert.match(String(body.message || ''), /подними.*шаг.*создай/i);
+        assert.equal(key,'gsk-compound-test','Groq key missing from compound request');
         return sendJson(res, {
           ok:true,
-          source:'openrouter',
-          provider:'google/gemma-4-26b-a4b-it:free',
+          source:'groq',
+          provider:'qwen/qwen3.6-27b',
           generative:true,
+          aiAvailable:true,
           text:'Выполняю три действия.',
           intent:'tool_action',
           actions:[],
@@ -57,7 +60,9 @@ try {
   browser = await chromium.launch({headless:true});
   const context = await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,locale:'ru-RU'});
   await context.addInitScript(({base}) => {
-    window.__NOVA_AI_ENDPOINT = `${base}/nova-openrouter`;
+    window.__NOVA_AI_ENDPOINT = `${base}/nova-groq`;
+    window.__NOVA_GROQ_PROXY = `${base}/nova-groq`;
+    localStorage.setItem('nova_groq_key_v1','gsk-compound-test');
     class MockUtterance { constructor(text){this.text=text;this.lang='';this.onend=null;this.onerror=null;} }
     Object.defineProperty(window,'SpeechSynthesisUtterance',{value:MockUtterance,configurable:true});
     Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{cancel(){},speak(u){setTimeout(()=>u.onend?.(),5);}}});
@@ -67,7 +72,7 @@ try {
   page.on('pageerror',e=>errors.push(e.message));
   page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await page.goto(base,{waitUntil:'domcontentloaded'});
-  await page.waitForFunction(()=>window.__NovaApp && window.__novaEmbodimentReady === true,null,{timeout:20000});
+  await page.waitForFunction(()=>window.__NovaApp && window.__NovaGroqAuth?.getState().generative === true && window.__novaEmbodimentReady === true,null,{timeout:20000});
 
   const beforePos = await page.evaluate(()=>window.__novaScene.avatar.position.x);
   const beforeCount = await page.evaluate(()=>window.__novaEmbodiment.getDynamicIds().length);
