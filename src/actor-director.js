@@ -1,10 +1,13 @@
 import * as THREE from 'three';
-
-const SCENE_ACTIONS = new Set(['look_at', 'point_at', 'highlight', 'move_near', 'press_button', 'remove_filter', 'face_user']);
-const EMBODIMENT_ACTIONS = new Set([
-  'raise_hand', 'lower_hand', 'wave', 'step', 'turn_body', 'neutral_pose',
-  'create_object', 'delete_object', 'move_object',
-]);
+import {
+  SCENE_ACTIONS,
+  EMBODIMENT_ACTIONS,
+  DEFAULT_ACTOR_SCRIPT,
+  fallbackPlan,
+  normalizeAiActions,
+  mergeSemanticActions,
+  actionLabel,
+} from './actor-plan.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value)));
@@ -13,6 +16,7 @@ const state = {
   scene: null,
   embodiment: null,
   running: false,
+  lastRun: null,
   stereo: null,
   skinInstalled: false,
   seated: false,
@@ -303,57 +307,16 @@ async function executeAction(action) {
     await sleep(clamp(args.ms ?? 500, 80, 4000));
     return { ok: true, action: 'pause' };
   }
-  if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
-  if (EMBODIMENT_ACTIONS.has(name)) return state.embodiment.execute({ name, args });
+  // Scene/embodiment actions go through the single Nova dispatcher so the
+  // director cannot replay the same tool in parallel with chat/demo handlers.
+  if (SCENE_ACTIONS.has(name) || EMBODIMENT_ACTIONS.has(name)) {
+    if (typeof window.__NovaApp?.executeAction === 'function') {
+      return window.__NovaApp.executeAction({ name, args });
+    }
+    if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
+    return state.embodiment.execute({ name, args });
+  }
   return { ok: false, error: 'actor_action_not_allowed', action: name };
-}
-
-function quotedDialogue(script) {
-  const matches = [...String(script).matchAll(/[«“\"]([^»”\"]{2,180})[»”\"]/g)];
-  return matches.map((match) => match[1].trim()).filter(Boolean).slice(0, 3);
-}
-
-function fallbackPlan(script) {
-  const lower = String(script || '').toLowerCase();
-  const plan = [];
-
-  if (/окн|window/.test(lower)) plan.push({ name: 'look_at', args: { targetId: 'actor_window' } });
-  if (/зрител|геро|viewer|user|камер|camera/.test(lower)) plan.push({ name: 'face_user', args: {} });
-  if (/замеч|notice|смотр|look/.test(lower)) plan.push({ name: 'face_user', args: {} });
-  if (/привет|машет|помах|wave|greet/.test(lower)) plan.push({ name: 'wave', args: { side: 'left' } });
-  if (/подход|подойти|приближ|approach|comes closer|walks to/.test(lower)) plan.push({ name: 'approach_user', args: { distanceFromUser: 1.55, maxMove: 1.6 } });
-  if (/стакан|glass|предмет.*стол|object.*table|показыва.*стол|point.*table/.test(lower)) {
-    plan.push({ name: 'look_at', args: { targetId: 'actor_glass' } });
-    plan.push({ name: 'point_at', args: { targetId: 'actor_glass' } });
-  }
-  if (/бер[её]т|возьм|поднимает стакан|pick.*up|takes the glass/.test(lower)) plan.push({ name: 'pick_up', args: { targetId: 'actor_glass' } });
-  if (/садит|садится|sit/.test(lower)) plan.push({ name: 'sit', args: {} });
-  if (/вста[её]т|stand/.test(lower)) plan.push({ name: 'stand', args: {} });
-
-  for (const line of quotedDialogue(script)) plan.push({ name: 'speak', args: { text: line } });
-
-  if (!plan.length) {
-    plan.push(
-      { name: 'face_user', args: {} },
-      { name: 'wave', args: { side: 'left' } },
-      { name: 'speak', args: { text: 'Я получила сценарий и готова отыграть сцену.' } },
-    );
-  }
-  return plan.slice(0, 14);
-}
-
-function normalizeAiActions(data) {
-  const result = [];
-  const seen = new Set();
-  for (const action of [...(Array.isArray(data?.actions) ? data.actions : []), ...(Array.isArray(data?.extendedActions) ? data.extendedActions : [])]) {
-    if (!action || typeof action.name !== 'string') continue;
-    const item = { name: action.name, args: action.args && typeof action.args === 'object' ? { ...action.args } : {} };
-    const key = `${item.name}:${JSON.stringify(item.args)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(item);
-  }
-  return result.slice(0, 12);
 }
 
 async function compileWithAI(script) {
@@ -390,28 +353,6 @@ async function compileWithAI(script) {
   return { actions, text: String(data.text || '').trim(), source: 'ai' };
 }
 
-function mergeSemanticActions(script, aiActions) {
-  const result = [...aiActions];
-  const lower = String(script).toLowerCase();
-  const names = new Set(result.map((item) => item.name));
-
-  // Director-only actions are injected from scene semantics after the LLM interpretation.
-  if (/подход|подойти|приближ|approach|comes closer|walks to/.test(lower) && !names.has('approach_user')) {
-    const faceIndex = Math.max(0, result.findIndex((item) => item.name === 'face_user'));
-    result.splice(faceIndex + 1, 0, { name: 'approach_user', args: { distanceFromUser: 1.55, maxMove: 1.6 } });
-  }
-  if (/бер[её]т|возьм|поднимает стакан|pick.*up|takes the glass/.test(lower) && !names.has('pick_up')) {
-    result.push({ name: 'pick_up', args: { targetId: 'actor_glass' } });
-  }
-  if (/садит|садится|sit/.test(lower) && !names.has('sit')) result.push({ name: 'sit', args: {} });
-
-  const dialogue = quotedDialogue(script);
-  if (dialogue.length && !result.some((item) => item.name === 'speak')) {
-    for (const line of dialogue) result.push({ name: 'speak', args: { text: line } });
-  }
-  return result.slice(0, 14);
-}
-
 async function compileScript(script, preferAI = true) {
   if (preferAI) {
     try {
@@ -424,14 +365,7 @@ async function compileScript(script, preferAI = true) {
   return { actions: fallbackPlan(script), text: '', source: 'fallback' };
 }
 
-function actionLabel(action) {
-  const args = action.args || {};
-  if (action.name === 'speak') return `SPEAK “${String(args.text || '').slice(0, 50)}”`;
-  const detail = args.targetId || args.side || args.direction || '';
-  return `${action.name.toUpperCase()}${detail ? ` → ${detail}` : ''}`;
-}
-
-async function runScript(script, options = {}) {
+async function performScript(script, options = {}) {
   if (state.running) throw new Error('Actor is already performing a script');
   await waitForRuntime();
   state.running = true;
@@ -451,10 +385,17 @@ async function runScript(script, options = {}) {
       await sleep(110);
     }
     if (log) log.textContent = `Scene complete · ${compiled.actions.length} actions · ${compiled.source}`;
-    return { ok: true, ...compiled, results };
+    state.lastRun = { ok: true, ...compiled, results };
+    return state.lastRun;
   } finally {
     state.running = false;
   }
+}
+
+async function runScript(script, options = {}) {
+  const run = () => performScript(script, options);
+  if (typeof window.__NovaApp?.queue === 'function') return window.__NovaApp.queue(run);
+  return run();
 }
 
 function injectStyles() {
@@ -462,7 +403,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'actor-director-styles';
   style.textContent = `
-    .actor-director-panel { position: fixed; left: 18px; bottom: 18px; z-index: 16; width: min(520px, calc(100vw - 36px)); padding: 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: rgba(7,11,18,.84); backdrop-filter: blur(18px); box-shadow: 0 18px 50px rgba(0,0,0,.32); color: #eef5ff; font: 13px/1.35 system-ui, sans-serif; }
+    .actor-director-panel { position: fixed; left: 18px; top: 118px; z-index: 28; width: min(420px, calc(100vw - 36px)); padding: 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: rgba(7,11,18,.84); backdrop-filter: blur(18px); box-shadow: 0 18px 50px rgba(0,0,0,.32); color: #eef5ff; font: 13px/1.35 system-ui, sans-serif; }
     .actor-director-panel .actor-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:9px; font-weight:700; letter-spacing:.04em; }
     .actor-director-panel textarea { width:100%; min-height:86px; resize:vertical; box-sizing:border-box; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.24); color:#fff; padding:10px; font:inherit; }
     .actor-director-panel .actor-buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
@@ -475,7 +416,7 @@ function injectStyles() {
     .stereo-vr-hud { position:absolute; left:0; right:0; top:0; display:flex; justify-content:space-between; padding:12px 18px; pointer-events:none; color:#fff; font:600 12px/1 system-ui; text-shadow:0 1px 5px #000; }
     .stereo-vr-bar { display:flex; gap:12px; align-items:center; justify-content:center; padding:10px; background:#0b0d10; color:#bfc8d5; font:12px system-ui; }
     .stereo-vr-bar button { border:1px solid #4a5565; border-radius:9px; background:#1a2029; color:#fff; padding:7px 11px; cursor:pointer; }
-    @media (max-width: 760px) { .actor-director-panel { bottom:10px; left:10px; width:calc(100vw - 20px); } }
+    @media (max-width: 760px) { .actor-director-panel { top:96px; left:10px; width:calc(100vw - 20px); max-height:34vh; overflow:auto; } }
   `;
   document.head.appendChild(style);
 }
@@ -552,7 +493,7 @@ function buildUi() {
   panel.className = 'actor-director-panel';
   panel.innerHTML = `
     <div class="actor-title"><span>AI ACTOR · CINEMATIC VR TEST</span><span style="opacity:.55">MVP</span></div>
-    <textarea id="actor-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
+    <textarea id="actor-script">${DEFAULT_ACTOR_SCRIPT}</textarea>
     <div class="actor-buttons">
       <button id="actor-run-ai" class="primary" type="button">AI → Act</button>
       <button id="actor-run-local" type="button">Run fallback</button>
@@ -594,6 +535,7 @@ window.__novaActorDirector = {
   stopStereoPreview,
   get ready() { return Boolean(window.__novaActorDirectorReady); },
   get running() { return state.running; },
+  get lastRun() { return state.lastRun; },
 };
 
 void init();
