@@ -32,6 +32,9 @@ jobs:
       - name: Syntax checks
         run: npm run check
 
+      - name: AI actor stereo VR smoke
+        run: npm run test:actor
+
       - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
 
