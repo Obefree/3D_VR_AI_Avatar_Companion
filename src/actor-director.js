@@ -403,7 +403,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'actor-director-styles';
   style.textContent = `
-    .actor-director-panel { position: fixed; left: 18px; bottom: 18px; z-index: 16; width: min(520px, calc(100vw - 36px)); padding: 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: rgba(7,11,18,.84); backdrop-filter: blur(18px); box-shadow: 0 18px 50px rgba(0,0,0,.32); color: #eef5ff; font: 13px/1.35 system-ui, sans-serif; }
+    .actor-director-panel { position: fixed; left: 18px; top: 118px; z-index: 28; width: min(420px, calc(100vw - 36px)); padding: 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: rgba(7,11,18,.84); backdrop-filter: blur(18px); box-shadow: 0 18px 50px rgba(0,0,0,.32); color: #eef5ff; font: 13px/1.35 system-ui, sans-serif; }
     .actor-director-panel .actor-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:9px; font-weight:700; letter-spacing:.04em; }
     .actor-director-panel textarea { width:100%; min-height:86px; resize:vertical; box-sizing:border-box; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.24); color:#fff; padding:10px; font:inherit; }
     .actor-director-panel .actor-buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
@@ -416,7 +416,7 @@ function injectStyles() {
     .stereo-vr-hud { position:absolute; left:0; right:0; top:0; display:flex; justify-content:space-between; padding:12px 18px; pointer-events:none; color:#fff; font:600 12px/1 system-ui; text-shadow:0 1px 5px #000; }
     .stereo-vr-bar { display:flex; gap:12px; align-items:center; justify-content:center; padding:10px; background:#0b0d10; color:#bfc8d5; font:12px system-ui; }
     .stereo-vr-bar button { border:1px solid #4a5565; border-radius:9px; background:#1a2029; color:#fff; padding:7px 11px; cursor:pointer; }
-    @media (max-width: 760px) { .actor-director-panel { bottom:10px; left:10px; width:calc(100vw - 20px); } }
+    @media (max-width: 760px) { .actor-director-panel { top:96px; left:10px; width:calc(100vw - 20px); max-height:34vh; overflow:auto; } }
   `;
   document.head.appendChild(style);
 }
