@@ -325,7 +325,7 @@ function fallbackPlan(script) {
   if (/зрител|геро|viewer|user|камер|camera/.test(lower)) plan.push({ name: 'face_user', args: {} });
   if (/замеч|notice|смотр|look/.test(lower)) plan.push({ name: 'face_user', args: {} });
   if (/привет|машет|помах|wave|greet/.test(lower)) plan.push({ name: 'wave', args: { side: 'left' } });
-  if (/подход|подойти|приближ|approach|comes closer|walks to/.test(lower)) plan.push({ name: 'approach_user', args: { distanceFromUser: 1.55, maxMove: 1.6 } });
+  if (/подход|подойд|приближ|ближе|approach|comes closer|walks to/.test(lower)) plan.push({ name: 'approach_user', args: { distanceFromUser: 1.55, maxMove: 1.6 } });
   if (/стакан|glass|предмет.*стол|object.*table|показыва.*стол|point.*table/.test(lower)) {
     plan.push({ name: 'look_at', args: { targetId: 'actor_glass' } });
     plan.push({ name: 'point_at', args: { targetId: 'actor_glass' } });
@@ -414,7 +414,7 @@ function mergeSemanticActions(script, aiActions) {
   const names = new Set(result.map((item) => item.name));
 
   // Director-only actions are injected from scene semantics after the LLM interpretation.
-  if (/подход|подойти|приближ|approach|comes closer|walks to/.test(lower) && !names.has('approach_user')) {
+  if (/подход|подойд|приближ|ближе|approach|comes closer|walks to/.test(lower) && !names.has('approach_user')) {
     const faceIndex = Math.max(0, result.findIndex((item) => item.name === 'face_user'));
     result.splice(faceIndex + 1, 0, { name: 'approach_user', args: { distanceFromUser: 1.55, maxMove: 1.6 } });
   }
