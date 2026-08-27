@@ -23,7 +23,7 @@
       <header class="topbar glass">
         <div>
           <div class="eyebrow">SPATIAL AI COMPANION</div>
-          <h1>Embodied realtime AI for games, VR and AR</h1>
+          <h1>Nova — embodied humanoid AI for games, VR and AR</h1>
         </div>
         <div class="status-row">
           <span id="mode-pill" class="pill">Agent mode</span>
@@ -33,12 +33,12 @@
 
       <section class="controls glass">
         <div class="button-row">
-          <button id="live-button" class="primary" type="button">Connect Groq</button>
+          <button id="live-button" class="primary" type="button">AI starting…</button>
           <button id="voice-demo-button" type="button">Talk to Nova</button>
           <button id="demo-button" type="button">Run guided demo</button>
           <button id="xr-button" class="hidden" type="button">Enter XR</button>
         </div>
-        <p class="hint">Talk naturally to Nova. Scene commands work locally through the agent core; Groq adds free-form conversation and complex multi-action understanding.</p>
+        <p class="hint">Talk naturally to Nova. She can answer, look, gesture, move through the 3D space and manipulate scene objects.</p>
         <div class="prompt-row">
           <input id="text-input" type="text" autocomplete="off" placeholder="Try: Raise your left hand or create a blue cube" />
           <button id="send-button" type="button">Send</button>
@@ -88,6 +88,7 @@
       // The active app executes actions centrally. Keep the authenticated Groq fetch path primary.
       if (window.__NOVA_PRIMARY_FETCH) window.fetch = window.__NOVA_PRIMARY_FETCH;
     </script>
+    <script src="./src/humanoid-avatar.js"></script>
     <script src="./src/xr-controls.js"></script>
   </body>
 </html>
