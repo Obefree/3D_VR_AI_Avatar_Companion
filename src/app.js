@@ -503,10 +503,13 @@
     send(text) { return queueInteraction(() => sendPrompt(text)); },
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
+    queue: queueInteraction,
+    executeAction,
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,
     getAIState() { return { ready: cloudAiReady, endpoint: AI_ENDPOINT }; },
+    isBusy() { return activeTurn || Boolean(window.__novaActorDirector?.running); },
   };
 
   bindUI();
