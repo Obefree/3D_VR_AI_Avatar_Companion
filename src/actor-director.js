@@ -51,6 +51,7 @@ function addMesh(parent, geometry, material, position, rotation = null, scale = 
 }
 
 function registerTarget(scene, id, label, mesh, material = mesh.material) {
+  mesh.updateWorldMatrix(true, false);
   const position = mesh.getWorldPosition(new THREE.Vector3());
   scene.targets.set(id, {
     id,
@@ -129,7 +130,7 @@ function installCinematicStage(scene) {
 function installFemaleActorSkin(scene) {
   if (state.skinInstalled || !scene.body || !scene.headPivot || !scene.leftArm || !scene.rightArm) return;
   state.skinInstalled = true;
-  state.bodyHomeY = scene.body.position.y;
+  state.bodyHomeY = scene.bodyBaseY ?? 0.87;
 
   // Keep the proven procedural rig, replace only its visible meshes with a stylized actor skin.
   scene.body.traverse((object) => {
@@ -159,10 +160,13 @@ function installFemaleActorSkin(scene) {
   addMesh(scene.headPivot, new THREE.SphereGeometry(0.238, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.58), hair, { x: 0, y: 0.03, z: 0.025 }, { x: -0.08 });
   addMesh(scene.headPivot, new THREE.CapsuleGeometry(0.07, 0.36, 6, 14), hair, { x: 0.18, y: -0.17, z: 0.08 }, { z: -0.14 });
   addMesh(scene.headPivot, new THREE.CapsuleGeometry(0.07, 0.36, 6, 14), hair, { x: -0.18, y: -0.17, z: 0.08 }, { z: 0.14 });
-  for (const x of [-0.07, 0.07]) {
-    addMesh(scene.headPivot, new THREE.SphereGeometry(0.018, 14, 10), eye, { x, y: 0.025, z: -0.205 });
-  }
-  addMesh(scene.headPivot, new THREE.BoxGeometry(0.065, 0.009, 0.012), mat(0xa65f62, 0.62, 0.0), { x: 0, y: -0.067, z: -0.216 });
+  const leftEye = addMesh(scene.headPivot, new THREE.SphereGeometry(0.018, 14, 10), eye, { x: -0.07, y: 0.025, z: -0.205 });
+  const rightEye = addMesh(scene.headPivot, new THREE.SphereGeometry(0.018, 14, 10), eye, { x: 0.07, y: 0.025, z: -0.205 });
+  const mouth = addMesh(scene.headPivot, new THREE.BoxGeometry(0.065, 0.009, 0.012), mat(0xa65f62, 0.62, 0.0), { x: 0, y: -0.067, z: -0.216 });
+  leftEye.name = 'actor_left_eye';
+  rightEye.name = 'actor_right_eye';
+  mouth.name = 'actor_mouth';
+  scene.faceRig = { mouth, leftEye, rightEye };
 
   function skinArm(arm) {
     addMesh(arm.root, new THREE.CylinderGeometry(0.047, 0.06, 0.42, 18), dress, { x: 0, y: -0.21, z: 0 });
@@ -212,12 +216,12 @@ async function approachUser(args = {}) {
 
 async function sitActor() {
   const scene = state.scene;
-  const home = state.bodyHomeY ?? scene.body.position.y;
+  const home = state.bodyHomeY ?? scene.bodyBaseY ?? 0.87;
   if (state.seated) return { ok: true, action: 'sit' };
-  const start = scene.body.position.y;
   const end = home - 0.28;
   scene.setState?.('acting');
-  await tween(700, (t) => { scene.body.position.y = THREE.MathUtils.lerp(start, end, t); });
+  if (typeof scene.tweenBodyBaseY === 'function') await scene.tweenBodyBaseY(end, 700);
+  else await tween(700, (t) => { scene.body.position.y = THREE.MathUtils.lerp(scene.body.position.y, end, t); });
   state.seated = true;
   scene.setState?.('idle');
   return { ok: true, action: 'sit' };
@@ -226,9 +230,9 @@ async function sitActor() {
 async function standActor() {
   const scene = state.scene;
   const home = state.bodyHomeY ?? 0.87;
-  const start = scene.body.position.y;
   scene.setState?.('acting');
-  await tween(650, (t) => { scene.body.position.y = THREE.MathUtils.lerp(start, home, t); });
+  if (typeof scene.tweenBodyBaseY === 'function') await scene.tweenBodyBaseY(home, 650);
+  else await tween(650, (t) => { scene.body.position.y = THREE.MathUtils.lerp(scene.body.position.y, home, t); });
   state.seated = false;
   scene.setState?.('idle');
   return { ok: true, action: 'stand' };
@@ -339,7 +343,21 @@ function fallbackPlan(script) {
       { name: 'speak', args: { text: 'Я получила сценарий и готова отыграть сцену.' } },
     );
   }
-  return plan.slice(0, 14);
+  return dedupeActions(plan).slice(0, 14);
+}
+
+function dedupeActions(plan) {
+  const result = [];
+  const seen = new Set();
+  for (const action of plan) {
+    if (!action || typeof action.name !== 'string') continue;
+    const item = { name: action.name, args: action.args && typeof action.args === 'object' ? { ...action.args } : {} };
+    const key = `${item.name}:${JSON.stringify(item.args)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
 }
 
 function normalizeAiActions(data) {
@@ -590,10 +608,12 @@ async function init() {
 window.__novaActorDirector = {
   runScript,
   compileScript,
+  fallbackPlan,
   startStereoPreview,
   stopStereoPreview,
   get ready() { return Boolean(window.__novaActorDirectorReady); },
   get running() { return state.running; },
+  get seated() { return state.seated; },
 };
 
 void init();

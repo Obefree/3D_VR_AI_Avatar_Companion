@@ -277,7 +277,7 @@
       return scene.executeTool(name, args);
     }
 
-    if (EXTENDED_ACTIONS.has(name) || DYNAMIC_SPATIAL_ACTIONS.has(name)) {
+    if (EXTENDED_ACTIONS.has(name)) {
       const embodiment = await waitForEmbodiment();
       if (!embodiment) return { ok: false, error: 'embodiment_not_ready', action: name };
       return embodiment.execute(action);

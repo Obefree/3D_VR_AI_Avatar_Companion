@@ -13,3 +13,4 @@ Before a build is handed off, CI must exercise the mobile end-to-end flow:
 9. One-finger touch rotate and two-finger pinch work.
 10. Mocked Russian SpeechRecognition transcript enters the same AI/action path.
 11. Legacy Realtime, session, health and tap-bridge runtime paths are absent.
+12. AI actor director fallback compiles without duplicate actions, sit survives the idle bob, pick_up attaches the prop, and stereo preview opens.
