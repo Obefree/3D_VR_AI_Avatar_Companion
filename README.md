@@ -1,135 +1,134 @@
-# Spatial AI Companion
+# Spatial AI Companion — Nova
 
-A browser-first MVP of an **embodied realtime AI assistant** for games, VR, mixed reality and future AR glasses.
+Nova is a browser-first **anthropomorphic embodied AI companion** for games, VR, mixed reality and spatial interfaces.
 
-The same agent concept can act as a game companion, onboarding guide, museum character, training assistant, or spatial UI layer.
+She is not a chat box placed next to a 3D scene. The language model receives semantic scene/body context and can answer the user while invoking an allowlisted set of physical actions in the same world.
 
-## What this MVP demonstrates
+## Canonical live demo
 
-- a fully procedural 3D animated companion with no external model dependency;
-- head gaze, idle motion, talking animation, pointing, highlighting and movement;
-- semantic spatial targets (`device`, `red_button`, `filter`);
-- center-view gaze / focus detection;
-- safe application-defined tool calls instead of arbitrary AI control;
-- realtime speech-to-speech through OpenAI Realtime WebRTC;
-- a scripted fallback demo that works without any API key;
-- browser speech recognition + speech synthesis for a zero-key voice demo;
-- WebXR entry point for compatible headsets and browsers.
-
-## Demo modes
-
-### 1. Demo mode
-
-Works as a static website. No server, account, API key or headset is required.
-
-Try:
-
-- `What am I looking at?`
-- `Show me the red button`
-- `What should I do next?`
-
-Use **Talk to Nova** in Chrome/Edge to speak instead of typing. The browser performs speech recognition and Nova replies using built-in speech synthesis while the same spatial tool layer drives the 3D avatar.
-
-### 2. Live AI mode
-
-`Connect Live AI` creates a WebRTC session with the OpenAI Realtime API. Microphone audio and model audio are carried by WebRTC. Spatial actions are returned as function calls and executed locally in the 3D scene.
-
-The permanent OpenAI API key stays on the server. It is intentionally never embedded in the static site.
-
-## Architecture
-
-```text
-Browser / XR headset
-       │
-       ├── microphone ─────────────┐
-       ├── head/view direction     │
-       └── semantic scene context  │
-                                  ▼
-                         Realtime AI session
-                         speech + reasoning
-                         function calling
-                                  │
-                                  ▼
-                             Tool Router
-                                  │
-                  ┌───────────────┼───────────────┐
-                  ▼               ▼               ▼
-                look             point          highlight
-                  │               │               │
-                  └──────────── 3D Avatar ─────────┘
-```
-
-The model never receives arbitrary JavaScript references and never executes code. It receives semantic IDs and may call only an allowlisted tool schema.
-
-## Run the static demo locally
-
-Any local web server works. For example:
-
-```bash
-npx serve . -l 4173
-```
-
-Then open `http://localhost:4173`.
-
-Because Three.js is loaded through an import map from jsDelivr, there is no frontend build step for this first MVP.
-
-## Public static preview
-
-Because the repository is public, the latest `main` can also be rendered through a source CDN:
+Use only this current `main` build:
 
 ```text
 https://raw.githack.com/Obefree/3D_VR_AI_Avatar_Companion/main/index.html
 ```
 
-This preview runs Demo Mode, browser voice input, 3D spatial tools, and WebXR where the browser supports it. A source-CDN preview cannot run the server-only `/api/session` endpoint, so Live OpenAI Realtime requires a serverless deployment.
+Older commit-pinned URLs are historical snapshots and are not the demo URL.
 
-## Deploy the live version on Vercel
+## Current stack
 
-1. Import this GitHub repository into Vercel.
-2. Add an environment variable:
+- Three.js + WebXR (`local-floor`) for browser/VR rendering.
+- CC0 Quaternius **Animated Woman** GLB as Nova's visible humanoid body.
+- Skeleton-driven gaze, pointing, hand raise/wave and conversational gestures.
+- AnimationMixer clips for idle/walking where available.
+- Browser SpeechRecognition for voice input and SpeechSynthesis for spoken replies.
+- Groq server-side AI through a Supabase Edge Function; no API key is exposed to the browser.
+- Fast deterministic command engine for simple scene actions, with Groq used for conversation and complex multi-action interpretation.
+- Editable semantic 3D world and an allowlisted tool router.
+
+## What Nova can do now
+
+### Conversation
+
+- answer free-form questions;
+- keep short conversational context;
+- respond in the user's language;
+- speak replies aloud in browsers with SpeechSynthesis.
+
+### Embodiment
+
+- look at the user or a scene target;
+- point at a target;
+- raise/lower either hand;
+- wave;
+- turn her body;
+- step in a direction by a requested distance;
+- move near an object;
+- return to a neutral pose.
+
+### Scene interaction
+
+- identify known objects and spatial relationships;
+- highlight objects;
+- press the service-device reset button;
+- remove the service filter after reset;
+- create box/sphere/cylinder/cone objects;
+- move created objects;
+- delete created objects.
+
+The AI never receives arbitrary JavaScript references. It can request only actions exposed in the explicit tool schema, and the browser validates/executes them locally.
+
+## Humanoid model
+
+Nova currently uses the Quaternius Animated Woman model from the Ultimate Modular Women / Animated Women asset set.
+
+- rigged and animated;
+- glTF/GLB;
+- Public Domain / CC0;
+- permitted for personal and commercial projects.
+
+The runtime loads the model, scales it to human height, resolves humanoid bones and maps Nova's semantic body state onto the skeleton. If the external model cannot load, the old procedural body remains only as a resilience fallback so scene logic still works.
+
+## Architecture
 
 ```text
-OPENAI_API_KEY=sk-...
+User text / microphone
+        │
+        ▼
+Browser Nova runtime ─────────────── scene + body context
+        │                                  │
+        ▼                                  ▼
+Supabase Groq proxy                  semantic 3D world
+        │                                  │
+        ▼                                  │
+Groq conversation / tool calls             │
+        │                                  │
+        └──────────────► allowlisted tool router
+                                   │
+             ┌─────────────────────┼─────────────────────┐
+             ▼                     ▼                     ▼
+       humanoid body          scene objects       service device
+       gaze/gesture/move      create/move/delete  button/filter
 ```
 
-3. Deploy.
-
-Vercel automatically exposes `api/session.js` as `/api/session`.
-
-The browser sends an SDP offer to that endpoint. The server forwards it to OpenAI's `POST /v1/realtime/calls` endpoint together with the session instructions and tool schemas, and returns the SDP answer.
-
-## GitHub Pages
-
-The included workflow deploys the static demo on pushes to `main`. GitHub Pages cannot safely hold a permanent OpenAI API key, so Pages intentionally runs the fully functional demo mode.
-
-For a new repository, Pages must be enabled once with `Settings → Pages → Source → GitHub Actions`.
+Simple known commands take the deterministic fast path so they do not wait for an LLM round trip. Compound or free-form requests use Groq and can return multiple physical actions in one turn.
 
 ## WebXR
 
-On supported browsers, an **Enter XR** button appears automatically.
+On supported browsers/headsets the app exposes an **Enter XR** control. The renderer is WebXR-enabled and uses a `local-floor` reference space so Nova and scene objects retain meter-scale spatial positions.
 
-The code prefers `immersive-ar` and falls back to `immersive-vr`. In AR, the synthetic demo room is hidden while the avatar and semantic demo objects remain spatial content.
+The same `avatar` root is used in desktop and XR modes, so movement, turning, semantic body positions and tool actions are shared instead of having a separate VR-only character implementation.
 
-A later native Quest build can replace the semantic demo context with Meta passthrough camera, scene/depth and anchors while keeping the same agent/tool contract.
+## Run locally
 
-## Current tool contract
-
-```json
-look_at({ "targetId": "red_button" })
-point_at({ "targetId": "red_button" })
-highlight({ "targetId": "red_button", "seconds": 3 })
-move_near({ "targetId": "device" })
+```bash
+npm install
+npx serve . -l 4173
 ```
 
-Allowed target IDs:
+Open `http://localhost:4173`.
 
-- `device`
-- `red_button`
-- `filter`
+## Verification
 
-## Security notes
+The repository CI checks:
 
-- Never put `OPENAI_API_KEY` in frontend JavaScript.
-- The model can call only explicit tools.
-- Tool arguments use known semantic target IDs.
-- A production version should add per-tool permissions, action cancellation, movement boundaries and user confirmation for consequential actions.
+- JavaScript syntax;
+- deterministic mobile scene/action flows;
+- reconnect behavior;
+- Groq connection state;
+- compound multi-tool execution;
+- real Supabase backend behavior;
+- public CDN build behavior;
+- real Quaternius GLB loading, skeleton resolution and humanoid hand/root movement.
+
+Run the full local verification set with:
+
+```bash
+npm run verify
+```
+
+## Security
+
+- The server Groq key is not embedded in frontend JavaScript.
+- AI actions are allowlisted and arguments are sanitized.
+- Built-in service objects cannot be deleted through dynamic-object tools.
+- Movement and object sizes are clamped to scene bounds.
