@@ -13,7 +13,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -49,3 +49,6 @@ jobs:
 
       - name: Immutable public URL mobile smoke
         run: npm run test:public
+
+      - name: Anthropomorphic avatar public smoke
+        run: npm run test:humanoid
