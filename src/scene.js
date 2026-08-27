@@ -125,7 +125,8 @@ export class SpatialScene {
     const darkMat = this.#material(0x09131d, { metalness: 0.5, roughness: 0.35 });
 
     this.body = new THREE.Group();
-    this.body.position.y = 0.87;
+    this.bodyBaseY = 0.87;
+    this.body.position.y = this.bodyBaseY;
     this.avatar.add(this.body);
 
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.38, 8, 20), bodyMat);
@@ -405,13 +406,16 @@ export class SpatialScene {
     const delta = Math.min(this.clock.getDelta(), 0.05);
     if (!this.isXR) this.controls.update();
 
-    this.body.position.y = 0.87 + Math.sin(time * 0.0018) * 0.025;
+    this.body.position.y = this.bodyBaseY + Math.sin(time * 0.0018) * 0.025;
+    const mouth = this.faceRig?.mouth || this.mouth;
+    const leftEye = this.faceRig?.leftEye || this.leftEye;
+    const rightEye = this.faceRig?.rightEye || this.rightEye;
     if (this.avatarState === 'speaking') {
-      this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
-      this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
-      this.rightEye.scale.copy(this.leftEye.scale);
+      mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
+      leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
+      rightEye.scale.copy(leftEye.scale);
     } else {
-      this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+      mouth.scale.y = THREE.MathUtils.lerp(mouth.scale.y, 1, delta * 8);
     }
 
     this.#updateHead(delta);
@@ -709,6 +713,25 @@ export class SpatialScene {
     this.screenMaterial.emissiveIntensity = 0.7;
   }
 
+  tweenBodyBaseY(targetY, duration = 700) {
+    const start = this.bodyBaseY;
+    const end = Number(targetY);
+    const began = performance.now();
+    return new Promise((resolve) => {
+      const tick = (now) => {
+        const t = Math.min(1, (now - began) / duration);
+        const eased = t * t * (3 - 2 * t);
+        this.bodyBaseY = start + (end - start) * eased;
+        if (t < 1) requestAnimationFrame(tick);
+        else {
+          this.bodyBaseY = end;
+          resolve();
+        }
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
   moveNear(id) {
     const target = this.targets.get(id);
     if (!target) return Promise.resolve();
@@ -748,6 +771,8 @@ export class SpatialScene {
     this.lookTarget = null;
     this.pointTarget = null;
     this.focusId = null;
+    this.bodyBaseY = 0.87;
+    this.body.position.y = this.bodyBaseY;
     this.avatar.position.copy(this.avatarHome);
     this.setState('idle');
     this.callbacks.onFocusChanged?.(null, this.getSceneContext());
