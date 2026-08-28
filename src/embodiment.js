@@ -616,30 +616,6 @@
     return false;
   }
 
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = async (...args) => {
-    const response = await originalFetch(...args);
-    try {
-      const input = args[0];
-      const init = args[1] || {};
-      const url = typeof input === 'string' ? input : input?.url || '';
-      const method = String(init.method || (typeof input !== 'string' ? input?.method : 'GET') || 'GET').toUpperCase();
-      if (method === 'POST' && url.includes('nova-chat')) {
-        const clone = response.clone();
-        const data = await clone.json().catch(() => null);
-        if (data?.ok && Array.isArray(data.extendedActions) && data.extendedActions.length) {
-          if (!state.ready) await waitForScene();
-          const results = [];
-          for (const action of data.extendedActions.slice(0, 8)) results.push(await executeExtended(action));
-          window.__novaLastExtendedResults = results;
-        }
-      }
-    } catch (error) {
-      console.error('Embodiment action execution failed:', error);
-    }
-    return response;
-  };
-
   window.__novaEmbodimentReady = false;
   window.addEventListener('DOMContentLoaded', () => {
     waitForScene();
