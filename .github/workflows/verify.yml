@@ -13,7 +13,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 24
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -31,6 +31,9 @@ jobs:
 
       - name: Syntax checks
         run: npm run check
+
+      - name: Scenario character and binocular VR smoke
+        run: npm run test:scenario-vr
 
       - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
