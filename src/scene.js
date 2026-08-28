@@ -758,12 +758,10 @@ export class SpatialScene {
     if (!navigator.xr) throw new Error('WebXR is not available in this browser.');
     const arSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
     const mode = arSupported ? 'immersive-ar' : 'immersive-vr';
-    const options = arSupported
-      ? {
-          optionalFeatures: ['local-floor', 'dom-overlay', 'hand-tracking'],
-          domOverlay: { root: document.body },
-        }
-      : { optionalFeatures: ['local-floor', 'hand-tracking'] };
+    const options = {
+      optionalFeatures: ['local-floor', 'dom-overlay', 'hand-tracking'],
+      domOverlay: { root: document.body },
+    };
 
     const session = await navigator.xr.requestSession(mode, options);
     this.isXR = true;

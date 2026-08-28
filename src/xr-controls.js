@@ -31,28 +31,9 @@
   }
 
   function enhanceVrEntry(scene) {
-    if (!scene?.enterXR || scene.__novaOriginalEnterXR || !navigator.xr) return;
-    const originalEnterXR = scene.enterXR.bind(scene);
-    scene.__novaOriginalEnterXR = originalEnterXR;
-
-    scene.enterXR = async () => {
-      const arSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-      if (arSupported) return originalEnterXR();
-
-      const vrSupported = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
-      if (!vrSupported) return originalEnterXR();
-
-      const session = await navigator.xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor', 'hand-tracking', 'dom-overlay'],
-        domOverlay: { root: document.body },
-      });
-      scene.isXR = true;
-      session.addEventListener('end', () => {
-        scene.isXR = false;
-      }, { once: true });
-      await scene.renderer.xr.setSession(session);
-      return 'immersive-vr';
-    };
+    // SpatialScene.enterXR is the only WebXR session owner. This helper only
+    // widens orbit/camera limits so a second immersive session cannot start in parallel.
+    return configureScene(scene);
   }
 
   function bindSessionEnd(scene, button, session) {

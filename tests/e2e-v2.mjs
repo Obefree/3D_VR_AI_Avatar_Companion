@@ -165,14 +165,20 @@ let browser;
 try {
   const appSource = await readFile(resolve(root, 'src/app.js'), 'utf8');
   const indexSource = await readFile(resolve(root, 'index.html'), 'utf8');
+  const embodimentSource = await readFile(resolve(root, 'src/embodiment.js'), 'utf8');
+  const directorSource = await readFile(resolve(root, 'src/cinematic-director.js'), 'utf8');
   for (const stale of ['RealtimeCompanion', 'realtimeBackendAvailable', 'applySpatialIntent']) {
     assert.equal(appSource.includes(stale), false, `stale active runtime symbol remains: ${stale}`);
   }
   assert.equal(indexSource.includes('tap-interaction.js'), false, 'legacy tap bridge is still loaded');
   assert.equal(indexSource.includes('remote-audio'), false, 'legacy realtime audio element is still loaded');
+  assert.equal(indexSource.includes('__NOVA_PRIMARY_FETCH'), false, 'PRIMARY_FETCH paper-over was reintroduced');
+  assert.equal(embodimentSource.includes('window.fetch ='), false, 'embodiment fetch interceptor was reintroduced');
+  assert.equal(directorSource.includes('__NovaApp?.executeAction') || directorSource.includes('__NovaApp.executeAction'), true, 'cinematic director does not use the shared action dispatcher');
   await assert.rejects(access(resolve(root, 'src/realtime.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/session.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/health.js')), /ENOENT/);
+  await assert.rejects(access(resolve(root, 'tests/e2e.mjs')), /ENOENT/);
 
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -423,6 +429,18 @@ try {
   assert.equal(shellAfter, shellBefore, 'generic device tap recolored the shell');
 
   // E. Real synthetic touch gestures against OrbitControls: one-finger rotate + two-finger pinch.
+  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true, null, { timeout: 15000 });
+  const orbitHit = await page.evaluate(() => {
+    const el = document.elementFromPoint(160, 500);
+    const canvas = document.getElementById('scene');
+    return {
+      ok: el === canvas || Boolean(canvas?.contains(el)),
+      id: el?.id || '',
+      tag: el?.tagName || '',
+      className: typeof el?.className === 'string' ? el.className : '',
+    };
+  });
+  assert.ok(orbitHit.ok, `cinematic overlay is blocking the one-finger orbit zone: ${JSON.stringify(orbitHit)}`);
   const cdp = await context.newCDPSession(page);
   const cameraBefore = await page.evaluate(() => {
     const p = window.__novaScene.camera.position;

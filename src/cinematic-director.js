@@ -211,6 +211,17 @@ async function speak(text) {
   return { ok: true, action: 'speak', text: value };
 }
 
+function collapseParallelLocomotion(actions) {
+  const names = new Set(actions.map((action) => action.name));
+  const walkTargets = new Set(actions.filter((action) => action.name === 'walk_to').map((action) => action.args?.targetId).filter(Boolean));
+  return actions.filter((action) => {
+    if (action.name === 'step' && names.has('approach_user')) return false;
+    if (action.name === 'move_near' && walkTargets.has(action.args?.targetId)) return false;
+    if (action.name === 'move_near' && names.has('approach_user') && !action.args?.targetId) return false;
+    return true;
+  });
+}
+
 async function execute(action) {
   const name = String(action?.name || '').trim();
   const args = action?.args && typeof action.args === 'object' ? action.args : {};
@@ -221,7 +232,8 @@ async function execute(action) {
   if (name === 'pick_up') return pickUp(args);
   if (name === 'sit') return sitActor();
   if (name === 'stand') return standActor();
-  if (name === 'pause') { await sleep(clamp(args.ms ?? 450, 80, 4000)); return { ok: true, action: 'pause' }; }
+  if (name === 'pause' || name === 'wait') { await sleep(clamp(args.ms ?? 450, 80, 4000)); return { ok: true, action: name }; }
+  if (typeof window.__NovaApp?.executeAction === 'function') return window.__NovaApp.executeAction({ name, args });
   if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
   if (EMBODIMENT_ACTIONS.has(name)) return window.__novaEmbodiment.execute({ name, args });
   return { ok: false, error: 'cinematic_action_not_allowed', action: name };
@@ -298,14 +310,14 @@ async function compileAI(script) {
   if (!response.ok || data?.ok === false) throw new Error(data?.error || `AI HTTP ${response.status}`);
   const actions = normalizeActions(data);
   if (!actions.length) throw new Error('AI returned no actions');
-  return { source: 'ai', actions: enrichPlan(script, actions) };
+  return { source: 'ai', actions: collapseParallelLocomotion(enrichPlan(script, actions)) };
 }
 
 async function compile(script, preferAI = true) {
   if (preferAI) {
     try { return await compileAI(script); } catch (error) { console.warn('Cinematic AI fallback:', error); }
   }
-  return { source: 'fallback', actions: fallbackPlan(script) };
+  return { source: 'fallback', actions: collapseParallelLocomotion(fallbackPlan(script)) };
 }
 
 function label(action) {
@@ -314,9 +326,8 @@ function label(action) {
   return `${action.name.toUpperCase()}${args.targetId ? ` → ${args.targetId}` : ''}`;
 }
 
-async function run(script, options = {}) {
+async function perform(script, options = {}) {
   if (state.running) throw new Error('Scene is already running');
-  await waitForRuntime();
   state.running = true;
   const log = document.getElementById('cinematic-director-log');
   const list = document.getElementById('cinematic-action-list');
@@ -334,19 +345,37 @@ async function run(script, options = {}) {
   } finally { state.running = false; }
 }
 
+async function run(script, options = {}) {
+  await waitForRuntime();
+  if (typeof window.__NovaApp?.queue === 'function') return window.__NovaApp.queue(() => perform(script, options));
+  return perform(script, options);
+}
+
 function styleUi() {
   if (document.getElementById('cinematic-director-style')) return;
   const style = document.createElement('style');
   style.id = 'cinematic-director-style';
   style.textContent = `
-    .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; }
+    .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; pointer-events:none; }
+    .cinematic-director > * { pointer-events:auto; }
     .cinematic-director textarea { width:100%; min-height:90px; box-sizing:border-box; resize:vertical; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25); color:#fff; padding:10px; font:inherit; }
     .cinematic-director .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
     .cinematic-director button,.cinematic-director select { border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 11px; background:#171d27; color:#fff; cursor:pointer; }
     .cinematic-director button.primary { background:rgba(70,145,255,.28); }
+    .cinematic-director-bar { display:flex; justify-content:space-between; gap:10px; margin-bottom:9px; font-weight:700; align-items:center; }
     #cinematic-director-log { margin-top:8px; color:#b9d5ff; }
     #cinematic-action-list { margin-top:5px; color:#8f9bad; max-height:42px; overflow:auto; font-size:11px; }
-    @media(max-width:760px){.cinematic-director{left:10px;bottom:10px;width:calc(100vw - 20px)}}
+    #cinematic-director-tools { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+    @media(max-width:760px){
+      .cinematic-director{left:10px;right:auto;top:calc(72px + env(safe-area-inset-top,0px));bottom:auto;width:min(156px,calc(42vw - 12px));padding:8px 10px;z-index:28;max-height:22vh;overflow:auto;}
+      .cinematic-director:not(.is-collapsed){left:10px;right:10px;width:auto;}
+      .cinematic-director.is-collapsed{max-height:none;overflow:visible;}
+      .cinematic-director.is-collapsed #cinematic-director-body,
+      .cinematic-director.is-collapsed #cinematic-director-tools{display:none;}
+      .cinematic-director.is-collapsed .row{flex-direction:column;}
+      .cinematic-director textarea{min-height:52px;max-height:64px;}
+      .cinematic-director .row{margin-top:6px;}
+    }
   `;
   document.head.appendChild(style);
 }
@@ -357,14 +386,23 @@ function buildUi() {
   const panel = document.createElement('section');
   panel.id = 'cinematic-director';
   panel.className = 'cinematic-director';
+  if (window.innerWidth <= 760) panel.classList.add('is-collapsed');
   panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;font-weight:700"><span>AI ACTOR · CINEMATIC VR</span><span style="opacity:.55">HUMANOID</span></div>
-    <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
+    <div class="cinematic-director-bar"><span>AI ACTOR · CINEMATIC VR</span><button id="cinematic-director-toggle" type="button">${window.innerWidth <= 760 ? 'Scene tools' : 'HUMANOID'}</button></div>
+    <div id="cinematic-director-body">
+      <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
+      <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
+    </div>
     <div class="row"><button id="cinematic-run-ai" class="primary" type="button">AI → Act</button><button id="cinematic-run-local" type="button">Local fallback</button></div>
-    <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
+    <div id="cinematic-director-tools"></div>
   `;
   document.body.appendChild(panel);
   const script = panel.querySelector('#cinematic-script');
+  const toggle = panel.querySelector('#cinematic-director-toggle');
+  toggle.addEventListener('click', () => {
+    panel.classList.toggle('is-collapsed');
+    toggle.textContent = panel.classList.contains('is-collapsed') ? 'Scene tools' : 'Hide tools';
+  });
   panel.querySelector('#cinematic-run-ai').addEventListener('click', async () => { try { await run(script.value, { preferAI: true }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
   panel.querySelector('#cinematic-run-local').addEventListener('click', async () => { try { await run(script.value, { preferAI: false }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
 }
