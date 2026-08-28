@@ -4,13 +4,7 @@
   const CORE_ACTIONS = new Set(['speak', 'wait', 'approach_user']);
   const ALL_ACTIONS = new Set([...SCENE_ACTIONS, ...EMBODIMENT_ACTIONS, ...CORE_ACTIONS]);
 
-  const state = {
-    running: false,
-    stopRequested: false,
-    lastPlan: null,
-    lastSource: 'none',
-  };
-
+  const state = { running: false, stopRequested: false, lastPlan: null, lastSource: 'none' };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value)));
   const russian = (text) => /[А-Яа-яЁё]/.test(String(text || ''));
@@ -33,6 +27,51 @@
     return String(value || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').trim();
   }
 
+  function splitOutsideDialogue(text) {
+    const input = cleanText(text);
+    if (!input) return [];
+    const parts = [];
+    let current = '';
+    let quote = null;
+    const closing = { '«': '»', '“': '”', '"': '"' };
+
+    const flush = () => {
+      const value = current.trim();
+      if (value) parts.push(value);
+      current = '';
+    };
+
+    for (let i = 0; i < input.length; i += 1) {
+      const ch = input[i];
+      if (!quote && closing[ch]) {
+        quote = closing[ch];
+        current += ch;
+        continue;
+      }
+      if (quote && ch === quote) {
+        current += ch;
+        quote = null;
+        continue;
+      }
+      current += ch;
+      if (quote) continue;
+
+      if (ch === '\n') {
+        flush();
+        continue;
+      }
+      if (/[.!?]/.test(ch)) {
+        const next = input[i + 1] || '';
+        if (!next || /\s/.test(next)) {
+          flush();
+          while (/\s/.test(input[i + 1] || '')) i += 1;
+        }
+      }
+    }
+    flush();
+    return parts;
+  }
+
   function extractDialogue(segment) {
     const out = [];
     const regex = /[«“"]([^»”"]{1,500})[»”"]/g;
@@ -52,31 +91,18 @@
   }
 
   function splitScenario(script) {
-    const text = cleanText(script);
-    if (!text) return [];
-    const raw = text
-      .split(/\n+|(?<=[.!?])\s+(?=[А-ЯA-ZЁ«“"])/u)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const beats = [];
-    raw.forEach((segment, index) => {
-      const dialogue = extractDialogue(segment);
-      const direction = segment.replace(/[«“"][^»”"]{1,500}[»”"]/g, '').trim();
-      beats.push({
-        id: `beat_${index + 1}`,
-        raw: segment,
-        direction,
-        dialogue,
-        emotion: detectEmotion(segment),
-      });
-    });
-    return beats;
+    return splitOutsideDialogue(script).map((segment, index) => ({
+      id: `beat_${index + 1}`,
+      raw: segment,
+      direction: segment.replace(/[«“"][^»”"]{1,500}[»”"]/g, '').trim(),
+      dialogue: extractDialogue(segment),
+      emotion: detectEmotion(segment),
+    }));
   }
 
-  function targetFromText(text, runtimeScene) {
+  function targetFromText(text, runtimeScene, context = {}) {
     const lower = text.toLowerCase();
-    const targets = [...(runtimeScene?.targets?.values?.() || [])];
-    for (const target of targets) {
+    for (const target of [...(runtimeScene?.targets?.values?.() || [])]) {
       if (target?.internal) continue;
       const id = String(target.id || '').toLowerCase();
       const label = String(target.label || '').toLowerCase();
@@ -85,26 +111,29 @@
     if (/кноп|button/.test(lower) && runtimeScene?.targets?.has('red_button')) return 'red_button';
     if (/фильтр|filter/.test(lower) && runtimeScene?.targets?.has('filter')) return 'filter';
     if (/устройств|device|аппарат/.test(lower) && runtimeScene?.targets?.has('device')) return 'device';
+    if (context.lastTarget && /\b(него|нему|ней|неё|это|этот|там|it|that|there)\b/i.test(lower)) return context.lastTarget;
     return null;
   }
 
+  function actionKey(action) { return `${action?.name || ''}:${JSON.stringify(action?.args || {})}`; }
   function pushUnique(actions, action) {
     if (!action?.name || !ALL_ACTIONS.has(action.name)) return;
-    const key = `${action.name}:${JSON.stringify(action.args || {})}`;
-    if (!actions.some((item) => `${item.name}:${JSON.stringify(item.args || {})}` === key)) actions.push(action);
+    const key = actionKey(action);
+    if (!actions.some((item) => actionKey(item) === key)) actions.push(action);
   }
 
-  function actionsForBeat(beat, runtimeScene, actorProfile) {
+  function actionsForBeat(beat, runtimeScene, actorProfile, context) {
     const text = `${beat.direction} ${beat.raw}`.toLowerCase();
     const actions = [];
-    const targetId = targetFromText(text, runtimeScene);
+    const targetId = targetFromText(text, runtimeScene, context);
     const movement = actorProfile.movement || {};
     const character = actorProfile.character || {};
     const socialDistance = clamp(movement.personalDistanceMeters ?? 1.35, 0.8, 3.5);
     const gestureIntensity = clamp(movement.gestureIntensity ?? 0.55, 0, 1);
     const gazeEngagement = clamp(movement.gazeEngagement ?? 0.82, 0, 1);
 
-    const referencesViewer = /зрител|геро|пользовател|собесед|viewer|user|hero|camera|камер/.test(text);
+    const explicitViewer = /зрител|геро|пользовател|собесед|viewer|user|hero|camera|камер/.test(text);
+    const viewerContext = explicitViewer || context.viewerActive;
     const looks = /смотр|гляд|look|notice|замеч|видит|sees/.test(text);
     const approaches = /подход|приближ|ид[её]т к|walks? to|approach|comes? closer/.test(text);
     const waves = /машет|помах|wave|greet|приветствует/.test(text);
@@ -115,13 +144,25 @@
     const stepsRight = /вправо|направо|steps? right|moves? right/.test(text);
     const pauses = /пауза|молчит|жд[её]т|pause|waits?|silence/.test(text);
 
-    if (referencesViewer && (looks || gazeEngagement > 0.68 || beat.dialogue.length)) pushUnique(actions, { name: 'face_user', args: {} });
+    if (explicitViewer) context.viewerActive = true;
+    if (targetId) context.lastTarget = targetId;
+
+    if (viewerContext && (looks || turns || beat.dialogue.length || gazeEngagement > 0.75)) {
+      pushUnique(actions, { name: 'face_user', args: {} });
+    }
     if (targetId && looks) pushUnique(actions, { name: 'look_at', args: { targetId } });
-    if (turns && referencesViewer) pushUnique(actions, { name: 'face_user', args: {} });
+    if (turns && viewerContext) pushUnique(actions, { name: 'face_user', args: {} });
     else if (turns && !targetId) pushUnique(actions, { name: 'turn_body', args: { degrees: 45 } });
-    if (approaches && referencesViewer) pushUnique(actions, { name: 'approach_user', args: { distance: socialDistance } });
-    if (approaches && targetId) pushUnique(actions, { name: 'move_near', args: { targetId } });
-    if (waves || (/привет|hello|hi\b/.test(text) && gestureIntensity > 0.32 && (character.warmth ?? 0.7) > 0.5)) pushUnique(actions, { name: 'wave', args: { side: 'left' } });
+
+    if (approaches) {
+      if (targetId) pushUnique(actions, { name: 'move_near', args: { targetId } });
+      else if (viewerContext) pushUnique(actions, { name: 'approach_user', args: { distance: socialDistance } });
+      else pushUnique(actions, { name: 'step', args: { direction: 'front', distance: 0.7 } });
+    }
+
+    if (waves || (/привет|hello|hi\b/.test(text) && gestureIntensity > 0.32 && (character.warmth ?? 0.7) > 0.5)) {
+      pushUnique(actions, { name: 'wave', args: { side: 'left' } });
+    }
     if (points && targetId) {
       pushUnique(actions, { name: 'look_at', args: { targetId } });
       pushUnique(actions, { name: 'point_at', args: { targetId } });
@@ -132,7 +173,7 @@
     if (pauses) pushUnique(actions, { name: 'wait', args: { ms: 700 } });
 
     for (const line of beat.dialogue) {
-      if (gazeEngagement > 0.62) pushUnique(actions, { name: 'face_user', args: {} });
+      if (viewerContext && gazeEngagement > 0.55) pushUnique(actions, { name: 'face_user', args: {} });
       actions.push({ name: 'speak', args: { text: line, emotion: beat.emotion } });
     }
 
@@ -145,16 +186,17 @@
   function localCompile(script) {
     const runtimeScene = scene();
     const actorProfile = profile();
+    const context = { viewerActive: false, lastTarget: null };
     const beats = splitScenario(script).map((beat) => ({
       ...beat,
-      actions: actionsForBeat(beat, runtimeScene, actorProfile),
+      actions: actionsForBeat(beat, runtimeScene, actorProfile, context),
     }));
     const actions = beats.flatMap((beat) => beat.actions);
     if (!actions.length) {
       actions.push({ name: 'face_user', args: {} });
       actions.push({ name: 'speak', args: { text: russian(script) ? 'Я поняла сцену. Дай мне более конкретное действие или реплику.' : 'I understand the scene. Give me a more specific action or line.' } });
     }
-    return { source: 'local', beats, actions };
+    return { source: 'local', beats, actions, context };
   }
 
   function normalizeAiActions(data) {
@@ -174,11 +216,9 @@
   function mergePlans(localPlan, aiActions) {
     if (!aiActions.length) return localPlan;
     const actions = [];
-    const dialogueActions = localPlan.actions.filter((action) => action.name === 'speak');
-    for (const action of aiActions) pushUnique(actions, action);
-    for (const action of dialogueActions) actions.push(action);
-    if (!actions.some((action) => action.name === 'face_user') && dialogueActions.length) actions.unshift({ name: 'face_user', args: {} });
-    return { ...localPlan, source: 'ai+local', actions };
+    for (const localAction of localPlan.actions) pushUnique(actions, localAction);
+    for (const aiAction of aiActions) pushUnique(actions, aiAction);
+    return { ...localPlan, source: 'ai+core', actions };
   }
 
   async function aiCompile(script, localPlan) {
@@ -187,28 +227,19 @@
     const runtimeScene = scene();
     const actionVocabulary = [...SCENE_ACTIONS, ...EMBODIMENT_ACTIONS].join(', ');
     const message = [
-      'SCENARIO DIRECTOR MODE. You are planning embodied acting, not chatting with the user.',
+      'SCENARIO DIRECTOR MODE. Plan embodied acting; do not chat about the task.',
       profilePrompt(),
       `AVAILABLE PHYSICAL ACTIONS: ${actionVocabulary}.`,
-      'Use only those physical actions through the normal action/tool output. Do not invent new tools.',
-      'Do not generate bone rotations or animation keyframes. Plan intentions and meaningful physical actions only.',
-      'Keep actions ordered as a performance. Preserve explicit dialogue; the local scenario core handles spoken lines.',
+      'Use only those physical actions through the normal action/tool output. Do not invent tools.',
+      'Never generate bone rotations or animation keyframes. Plan intentions and meaningful physical actions.',
+      'Preserve scene continuity and pronoun references from one beat to the next.',
       `SCENE TARGETS: ${[...(runtimeScene?.targets?.values?.() || [])].filter((t) => !t.internal).map((t) => `${t.id}:${t.label}`).join(', ')}`,
       `SCENARIO:\n${script}`,
     ].join('\n\n');
 
     const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify({
-        message,
-        history: [],
-        scene: runtimeScene?.getSceneContext?.() || {},
-        toolResults: [],
-        phase: 'initial',
-        locale: navigator.language || 'en-US',
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, cache: 'no-store',
+      body: JSON.stringify({ message, history: [], scene: runtimeScene?.getSceneContext?.() || {}, toolResults: [], phase: 'initial', locale: navigator.language || 'en-US' }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data?.ok === false) throw new Error(data?.error || `AI HTTP ${response.status}`);
@@ -226,16 +257,9 @@
     }
   }
 
-  function viewerWorldPosition(runtimeScene) {
-    if (typeof runtimeScene?.getViewerWorldPosition === 'function') return runtimeScene.getViewerWorldPosition();
-    const THREE = window.__novaEmbodiment?.THREE;
-    if (THREE && runtimeScene?.camera) return runtimeScene.camera.getWorldPosition(new THREE.Vector3());
-    return null;
-  }
-
   async function approachUser(args = {}) {
     const runtimeScene = scene();
-    const THREE = window.__novaEmbodiment?.THREE || (await import('three'));
+    const THREE = await import('three');
     const viewer = typeof runtimeScene.getViewerWorldPosition === 'function'
       ? runtimeScene.getViewerWorldPosition()
       : runtimeScene.camera.getWorldPosition(new THREE.Vector3());
@@ -277,8 +301,7 @@
         const finish = () => { if (!done) { done = true; resolve(); } };
         const utterance = new SpeechSynthesisUtterance(value);
         utterance.lang = russian(value) ? 'ru-RU' : (navigator.language || 'en-US');
-        const speech = profile()?.speech || {};
-        utterance.rate = /calm/i.test(speech.tempo || '') ? 0.94 : 1.0;
+        utterance.rate = /calm/i.test(profile()?.speech?.tempo || '') ? 0.94 : 1.0;
         utterance.pitch = 1.02;
         utterance.onend = finish;
         utterance.onerror = finish;
@@ -429,18 +452,10 @@
     installUi();
     document.getElementById('nova-scenario-modal').classList.add('open');
   }
-
-  function closeUi() {
-    document.getElementById('nova-scenario-modal')?.classList.remove('open');
-  }
+  function closeUi() { document.getElementById('nova-scenario-modal')?.classList.remove('open'); }
 
   window.__novaScenarioCore = {
-    splitScenario,
-    compile,
-    run,
-    stop,
-    open: openUi,
-    close: closeUi,
+    splitScenario, compile, run, stop, open: openUi, close: closeUi,
     getState: () => ({ running: state.running, source: state.lastSource, lastPlan: state.lastPlan }),
     actions: () => [...ALL_ACTIONS],
   };
