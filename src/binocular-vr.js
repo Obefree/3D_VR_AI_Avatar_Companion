@@ -1,5 +1,6 @@
 (() => {
   const DEFAULT_EYE_SEPARATION = 0.064;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value)));
   const state = {
     scene: null,
     THREE: null,
