@@ -170,7 +170,9 @@ try {
   }
   assert.equal(indexSource.includes('tap-interaction.js'), false, 'legacy tap bridge is still loaded');
   assert.equal(indexSource.includes('remote-audio'), false, 'legacy realtime audio element is still loaded');
+  assert.equal(indexSource.includes('__NOVA_PRIMARY_FETCH'), false, 'PRIMARY_FETCH paper-over was reintroduced');
   await assert.rejects(access(resolve(root, 'src/realtime.js')), /ENOENT/);
+  await assert.rejects(access(resolve(root, 'tests/e2e.mjs')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/session.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/health.js')), /ENOENT/);
 
@@ -423,6 +425,14 @@ try {
   assert.equal(shellAfter, shellBefore, 'generic device tap recolored the shell');
 
   // E. Real synthetic touch gestures against OrbitControls: one-finger rotate + two-finger pinch.
+  const orbitHit = await page.evaluate(() => {
+    const el = document.elementFromPoint(160, 500);
+    return { id: el?.id || '', tag: el?.tagName || '', className: String(el?.className || '') };
+  });
+  assert.ok(
+    orbitHit.id === 'scene' || orbitHit.tag === 'CANVAS',
+    `one-finger orbit point is covered by ${JSON.stringify(orbitHit)}`,
+  );
   const cdp = await context.newCDPSession(page);
   const cameraBefore = await page.evaluate(() => {
     const p = window.__novaScene.camera.position;

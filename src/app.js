@@ -6,6 +6,7 @@
   const BASE_ACTIONS = new Set(['look_at','point_at','highlight','move_near','press_button','remove_filter','face_user']);
   const EXTENDED_ACTIONS = new Set(['raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object']);
   const DYNAMIC_SPATIAL_ACTIONS = new Set(['look_at','point_at','highlight','move_near']);
+  const DIRECTOR_ACTIONS = new Set(['approach_user','walk_to','pick_up','sit','stand','pause']);
 
   let scene = createFallbackScene();
   let cloudAiReady = false;
@@ -283,6 +284,10 @@
       return embodiment.execute(action);
     }
 
+    if (DIRECTOR_ACTIONS.has(name) && typeof window.__novaCinematicDirector?.execute === 'function') {
+      return window.__novaCinematicDirector.execute(action);
+    }
+
     return { ok: false, error: 'action_not_allowed', action: name };
   }
 
@@ -366,8 +371,19 @@
     );
   }
 
+  async function waitWhileDirector() {
+    const started = performance.now();
+    while (window.__novaCinematicDirector?.running && performance.now() - started < 60000) await wait(50);
+  }
+
   function queueInteraction(fn) {
-    const run = interactionQueue.then(fn, fn);
+    const run = interactionQueue.then(async () => {
+      await waitWhileDirector();
+      return fn();
+    }, async () => {
+      await waitWhileDirector();
+      return fn();
+    });
     interactionQueue = run.catch((error) => console.error('Interaction failed:', error));
     return run;
   }
@@ -503,6 +519,8 @@
     send(text) { return queueInteraction(() => sendPrompt(text)); },
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
+    executeAction,
+    get busy() { return activeTurn; },
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,

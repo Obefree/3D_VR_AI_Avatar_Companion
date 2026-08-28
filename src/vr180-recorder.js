@@ -265,7 +265,8 @@ function stopRecording() {
 function addUi() {
   const panel = document.getElementById('cinematic-director');
   if (!panel || document.getElementById('vr180-record-button')) return false;
-  const row = panel.querySelector('.row') || panel;
+  const host = panel.querySelector('#cinematic-director-body') || panel;
+  const row = host.querySelector('.row') || host;
 
   const select = document.createElement('select');
   select.id = 'vr180-preset';
@@ -291,7 +292,7 @@ function addUi() {
   const status = document.createElement('div');
   status.id = 'vr180-status'; status.style.cssText = 'margin-top:6px;color:#a9bad0;font:11px system-ui';
   status.textContent = 'VR180: 180°×180° per eye · Left–Right SBS · Canon-style 60 mm default';
-  panel.appendChild(status);
+  host.appendChild(status);
 
   button.addEventListener('click', async () => {
     try {
