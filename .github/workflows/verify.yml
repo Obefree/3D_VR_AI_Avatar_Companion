@@ -32,6 +32,9 @@ jobs:
       - name: Syntax checks
         run: npm run check
 
+      - name: Scenario character and binocular VR smoke
+        run: npm run test:scenario-vr
+
       - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
 
@@ -52,6 +55,3 @@ jobs:
 
       - name: Anthropomorphic avatar public smoke
         run: npm run test:humanoid
-
-      - name: Scenario character and binocular VR smoke
-        run: npm run test:scenario-vr
