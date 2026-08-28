@@ -405,17 +405,18 @@ export class SpatialScene {
     const delta = Math.min(this.clock.getDelta(), 0.05);
     if (!this.isXR) this.controls.update();
 
-    this.body.position.y = 0.87 + Math.sin(time * 0.0018) * 0.025;
-    if (this.avatarState === 'speaking') {
-      this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
-      this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
-      this.rightEye.scale.copy(this.leftEye.scale);
-    } else {
-      this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+    if (this.body?.visible !== false) {
+      this.body.position.y = 0.87 + Math.sin(time * 0.0018) * 0.025;
+      if (this.avatarState === 'speaking') {
+        this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
+        this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
+        this.rightEye.scale.copy(this.leftEye.scale);
+      } else {
+        this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+      }
+      this.#updateHead(delta);
+      this.#updateArm(delta);
     }
-
-    this.#updateHead(delta);
-    this.#updateArm(delta);
     this.#updateFocus(time);
     this.renderer.render(this.scene, this.camera);
   }

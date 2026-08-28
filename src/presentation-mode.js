@@ -2,15 +2,37 @@
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   let enabled = false;
 
+  function hideObject(object) {
+    if (!object || object.userData.__novaPreservedVisibility !== undefined) return;
+    object.userData.__novaPreservedVisibility = object.visible !== false;
+    object.visible = false;
+  }
+
+  function restoreObject(object) {
+    if (!object || object.userData.__novaPreservedVisibility === undefined) return;
+    object.visible = object.userData.__novaPreservedVisibility;
+    delete object.userData.__novaPreservedVisibility;
+  }
+
   function hideLegacySceneProps(scene) {
     if (!scene) return;
-    if (scene.device) scene.device.visible = false;
+    hideObject(scene.device);
     if (scene.environmentGroup?.children?.length) {
-      // Keep the floor, remove the diagnostic grid and old service pedestal.
-      scene.environmentGroup.children.forEach((child, index) => { if (index > 0) child.visible = false; });
+      scene.environmentGroup.children.forEach((child, index) => { if (index > 0) hideObject(child); });
     }
     for (const [id, target] of scene.targets || []) {
-      if (String(id).startsWith('user_') && target?.mesh) target.mesh.visible = false;
+      if (String(id).startsWith('user_') && target?.mesh) hideObject(target.mesh);
+    }
+  }
+
+  function restoreLegacySceneProps(scene) {
+    if (!scene) return;
+    restoreObject(scene.device);
+    if (scene.environmentGroup?.children?.length) {
+      scene.environmentGroup.children.forEach((child) => restoreObject(child));
+    }
+    for (const [id, target] of scene.targets || []) {
+      if (String(id).startsWith('user_') && target?.mesh) restoreObject(target.mesh);
     }
   }
 
@@ -37,6 +59,9 @@
     document.documentElement.classList.toggle('cinematic-presentation', enabled);
     const button = document.getElementById('cinematic-present-toggle');
     if (button) button.textContent = enabled ? 'Exit presentation' : 'Presentation mode';
+    const scene = window.__novaScene;
+    if (enabled) hideLegacySceneProps(scene);
+    else restoreLegacySceneProps(scene);
     window.dispatchEvent(new CustomEvent('nova:presentation-mode', { detail: { enabled } }));
   }
 
@@ -46,7 +71,6 @@
       const scene = window.__novaScene;
       const panel = document.getElementById('cinematic-director');
       if (scene?.scene && panel) {
-        hideLegacySceneProps(scene);
         const row = panel.querySelector('.row') || panel;
         const button = document.createElement('button');
         button.id = 'cinematic-present-toggle';
