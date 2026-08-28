@@ -12,6 +12,10 @@ assert.match(director, /async function pickUp/, 'prop pickup missing');
 assert.match(director, /actor_window/, 'cinematic window target missing');
 assert.match(director, /actor_glass/, 'cinematic prop target missing');
 assert.match(director, /nova:cinematic-action/, 'cinematic action event missing');
+assert.match(director, /is-collapsed/, 'director should start collapsed so it does not steal canvas gestures');
+assert.match(director, /collapseParallelActions/, 'parallel locomotion collapse missing');
+assert.match(director, /__NovaApp\?\.executeAction/, 'director must reuse the chat action dispatcher');
+assert.equal(director.includes('width:calc(100vw - 20px)'), false, 'mobile director overlay must not cover full viewport width');
 
 assert.match(vr180, /equirectangular-180/, 'VR180 projection metadata missing');
 assert.match(vr180, /stereoLayout: 'left-right'/, 'LR SBS stereo layout missing');
@@ -26,5 +30,6 @@ assert.match(vr180, /5760.*2880.*48/s, 'Quest HQ preset missing');
 assert.match(index, /src\/humanoid-avatar\.js/, 'humanoid main missing');
 assert.match(index, /src\/cinematic-director\.js/, 'cinematic director not loaded');
 assert.match(index, /src\/vr180-recorder\.js/, 'VR180 recorder not loaded');
+assert.equal(index.includes('__NOVA_PRIMARY_FETCH'), false, 'PRIMARY_FETCH restore papers over a duplicate fetch interceptor');
 
 console.log('cinematic director + VR180 + audio smoke: ok');

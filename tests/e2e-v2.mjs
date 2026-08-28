@@ -170,6 +170,9 @@ try {
   }
   assert.equal(indexSource.includes('tap-interaction.js'), false, 'legacy tap bridge is still loaded');
   assert.equal(indexSource.includes('remote-audio'), false, 'legacy realtime audio element is still loaded');
+  assert.equal(indexSource.includes('__NOVA_PRIMARY_FETCH'), false, 'stale fetch interceptor restore remains');
+  const embodimentSource = await readFile(resolve(root, 'src/embodiment.js'), 'utf8');
+  assert.equal(embodimentSource.includes('window.fetch ='), false, 'embodiment fetch interceptor would execute actions beside app.js');
   await assert.rejects(access(resolve(root, 'src/realtime.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/session.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/health.js')), /ENOENT/);
@@ -236,6 +239,7 @@ try {
 
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__novaScene && window.__NovaApp, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true, null, { timeout: 15000 });
   await page.waitForFunction(() => document.getElementById('transport-state')?.textContent === 'AI ready', null, { timeout: 10000 });
 
   // A. Connect through the real visible UI.
@@ -423,6 +427,25 @@ try {
   assert.equal(shellAfter, shellBefore, 'generic device tap recolored the shell');
 
   // E. Real synthetic touch gestures against OrbitControls: one-finger rotate + two-finger pinch.
+  const overlayHit = await page.evaluate(() => {
+    const el = document.elementFromPoint(160, 500);
+    const panel = document.getElementById('cinematic-director');
+    const rect = panel?.getBoundingClientRect();
+    return {
+      id: el?.id || '',
+      tag: el?.tagName || '',
+      className: String(el?.className || ''),
+      collapsed: Boolean(panel?.classList.contains('is-collapsed')),
+      covers: Boolean(rect && rect.left <= 160 && rect.right >= 160 && rect.top <= 500 && rect.bottom >= 500),
+    };
+  });
+  assert.equal(overlayHit.collapsed, true, 'cinematic director should start collapsed on mobile');
+  assert.equal(overlayHit.covers, false, `cinematic overlay covers orbit point (160,500): ${JSON.stringify(overlayHit)}`);
+  assert.ok(
+    overlayHit.id === 'scene' || overlayHit.tag === 'CANVAS',
+    `cinematic overlay stole canvas gesture at (160,500): ${JSON.stringify(overlayHit)}`,
+  );
+
   const cdp = await context.newCDPSession(page);
   const cameraBefore = await page.evaluate(() => {
     const p = window.__novaScene.camera.position;

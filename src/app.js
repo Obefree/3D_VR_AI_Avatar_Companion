@@ -503,6 +503,7 @@
     send(text) { return queueInteraction(() => sendPrompt(text)); },
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
+    executeAction,
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,

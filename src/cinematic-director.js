@@ -211,6 +211,34 @@ async function speak(text) {
   return { ok: true, action: 'speak', text: value };
 }
 
+function isViewerApproach(action) {
+  return action?.name === 'approach_user' || action?.name === 'step';
+}
+
+function walkTargetId(action) {
+  if (action?.name !== 'walk_to' && action?.name !== 'move_near') return '';
+  return String(action?.args?.targetId || '');
+}
+
+function collapseParallelActions(actions) {
+  const result = [];
+  for (const action of actions) {
+    const prev = result[result.length - 1];
+    if (!prev) {
+      result.push(action);
+      continue;
+    }
+    const same = prev.name === action.name && JSON.stringify(prev.args || {}) === JSON.stringify(action.args || {});
+    if (same) continue;
+    if (isViewerApproach(prev) && isViewerApproach(action)) continue;
+    const prevWalk = walkTargetId(prev);
+    const nextWalk = walkTargetId(action);
+    if (prevWalk && nextWalk && prevWalk === nextWalk) continue;
+    result.push(action);
+  }
+  return result;
+}
+
 async function execute(action) {
   const name = String(action?.name || '').trim();
   const args = action?.args && typeof action.args === 'object' ? action.args : {};
@@ -222,6 +250,9 @@ async function execute(action) {
   if (name === 'sit') return sitActor();
   if (name === 'stand') return standActor();
   if (name === 'pause') { await sleep(clamp(args.ms ?? 450, 80, 4000)); return { ok: true, action: 'pause' }; }
+  if (typeof window.__NovaApp?.executeAction === 'function' && (SCENE_ACTIONS.has(name) || EMBODIMENT_ACTIONS.has(name))) {
+    return window.__NovaApp.executeAction({ name, args });
+  }
   if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
   if (EMBODIMENT_ACTIONS.has(name)) return window.__novaEmbodiment.execute({ name, args });
   return { ok: false, error: 'cinematic_action_not_allowed', action: name };
@@ -248,7 +279,7 @@ function fallbackPlan(script) {
   if (/вста[её]т|stand/.test(lower)) plan.push({ name: 'stand', args: {} });
   for (const line of dialogue(script)) plan.push({ name: 'speak', args: { text: line } });
   if (!plan.length) plan.push({ name: 'face_user', args: {} }, { name: 'wave', args: { side: 'left' } }, { name: 'speak', args: { text: 'Я получила сценарий и готова отыграть сцену.' } });
-  return plan.slice(0, 16);
+  return collapseParallelActions(plan).slice(0, 16);
 }
 
 function normalizeActions(data) {
@@ -269,12 +300,12 @@ function enrichPlan(script, actions) {
   const result = [...actions];
   const lower = String(script).toLowerCase();
   const names = new Set(result.map((a) => a.name));
-  if (/подход|подойти|приближ|approach|comes closer/.test(lower) && !names.has('approach_user')) result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
+  if (/подход|подойти|приближ|approach|comes closer/.test(lower) && !names.has('approach_user') && !names.has('step')) result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
   if (/бер[её]т|возьм|pick.*up|takes the glass/.test(lower) && !names.has('pick_up')) result.push({ name: 'pick_up', args: { targetId: 'actor_glass' } });
   if (/садит|садится|sit/.test(lower) && !names.has('sit')) result.push({ name: 'sit', args: {} });
   const lines = dialogue(script);
   if (lines.length && !result.some((a) => a.name === 'speak')) for (const line of lines) result.push({ name: 'speak', args: { text: line } });
-  return result.slice(0, 16);
+  return collapseParallelActions(result).slice(0, 16);
 }
 
 async function compileAI(script) {
@@ -296,7 +327,7 @@ async function compileAI(script) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data?.ok === false) throw new Error(data?.error || `AI HTTP ${response.status}`);
-  const actions = normalizeActions(data);
+  const actions = collapseParallelActions(normalizeActions(data));
   if (!actions.length) throw new Error('AI returned no actions');
   return { source: 'ai', actions: enrichPlan(script, actions) };
 }
@@ -322,6 +353,7 @@ async function run(script, options = {}) {
   const list = document.getElementById('cinematic-action-list');
   try {
     const plan = await compile(script, options.preferAI !== false);
+    plan.actions = collapseParallelActions(plan.actions);
     if (list) list.textContent = plan.actions.map(label).join('  ›  ');
     for (let i = 0; i < plan.actions.length; i += 1) {
       const action = plan.actions[i];
@@ -339,14 +371,44 @@ function styleUi() {
   const style = document.createElement('style');
   style.id = 'cinematic-director-style';
   style.textContent = `
-    .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; }
-    .cinematic-director textarea { width:100%; min-height:90px; box-sizing:border-box; resize:vertical; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25); color:#fff; padding:10px; font:inherit; }
-    .cinematic-director .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
-    .cinematic-director button,.cinematic-director select { border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 11px; background:#171d27; color:#fff; cursor:pointer; }
-    .cinematic-director button.primary { background:rgba(70,145,255,.28); }
-    #cinematic-director-log { margin-top:8px; color:#b9d5ff; }
-    #cinematic-action-list { margin-top:5px; color:#8f9bad; max-height:42px; overflow:auto; font-size:11px; }
-    @media(max-width:760px){.cinematic-director{left:10px;bottom:10px;width:calc(100vw - 20px)}}
+    .cinematic-director {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      left: auto;
+      z-index: 28;
+      width: min(380px, calc(46vw - 24px));
+      max-height: min(46vh, 420px);
+      overflow: auto;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 16px;
+      background: rgba(7,11,18,.86);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 18px 50px rgba(0,0,0,.34);
+      color: #eef5ff;
+      font: 13px/1.35 system-ui, sans-serif;
+      pointer-events: none;
+    }
+    .cinematic-director-header,
+    .cinematic-director button,
+    .cinematic-director select,
+    .cinematic-director textarea,
+    .cinematic-director label,
+    .cinematic-director input { pointer-events: auto; }
+    .cinematic-director-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 700; }
+    .cinematic-director.is-collapsed { width: auto; max-width: min(220px, 46vw); max-height: none; overflow: visible; padding: 8px 10px; }
+    .cinematic-director.is-collapsed .cinematic-director-body { display: none; }
+    .cinematic-director textarea { width: 100%; min-height: 90px; box-sizing: border-box; resize: vertical; border-radius: 11px; border: 1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.25); color: #fff; padding: 10px; font: inherit; }
+    .cinematic-director .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+    .cinematic-director button, .cinematic-director select { border: 1px solid rgba(255,255,255,.16); border-radius: 10px; padding: 8px 11px; background: #171d27; color: #fff; cursor: pointer; }
+    .cinematic-director button.primary { background: rgba(70,145,255,.28); }
+    #cinematic-director-log { margin-top: 8px; color: #b9d5ff; }
+    #cinematic-action-list { margin-top: 5px; color: #8f9bad; max-height: 42px; overflow: auto; font-size: 11px; }
+    @media (max-width: 760px) {
+      .cinematic-director { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: min(180px, 46vw); max-height: 36vh; }
+      .cinematic-director.is-collapsed { width: auto; max-width: min(168px, 44vw); }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -356,15 +418,22 @@ function buildUi() {
   styleUi();
   const panel = document.createElement('section');
   panel.id = 'cinematic-director';
-  panel.className = 'cinematic-director';
+  panel.className = 'cinematic-director is-collapsed';
   panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;font-weight:700"><span>AI ACTOR · CINEMATIC VR</span><span style="opacity:.55">HUMANOID</span></div>
-    <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
-    <div class="row"><button id="cinematic-run-ai" class="primary" type="button">AI → Act</button><button id="cinematic-run-local" type="button">Local fallback</button></div>
-    <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
+    <div class="cinematic-director-header"><span>AI ACTOR · VR</span><button id="cinematic-toggle" type="button">Open</button></div>
+    <div class="cinematic-director-body">
+      <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
+      <div class="row"><button id="cinematic-run-ai" class="primary" type="button">AI → Act</button><button id="cinematic-run-local" type="button">Local fallback</button></div>
+      <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
+    </div>
   `;
   document.body.appendChild(panel);
   const script = panel.querySelector('#cinematic-script');
+  const toggle = panel.querySelector('#cinematic-toggle');
+  toggle.addEventListener('click', () => {
+    const collapsed = panel.classList.toggle('is-collapsed');
+    toggle.textContent = collapsed ? 'Open' : 'Hide';
+  });
   panel.querySelector('#cinematic-run-ai').addEventListener('click', async () => { try { await run(script.value, { preferAI: true }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
   panel.querySelector('#cinematic-run-local').addEventListener('click', async () => { try { await run(script.value, { preferAI: false }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
 }
