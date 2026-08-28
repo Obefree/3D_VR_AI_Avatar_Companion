@@ -32,6 +32,9 @@ jobs:
       - name: Syntax checks
         run: npm run check
 
+      - name: Cinematic director and VR180 smoke
+        run: npm run test:cinematic
+
       - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
 

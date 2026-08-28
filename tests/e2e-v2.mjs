@@ -165,14 +165,19 @@ let browser;
 try {
   const appSource = await readFile(resolve(root, 'src/app.js'), 'utf8');
   const indexSource = await readFile(resolve(root, 'index.html'), 'utf8');
+  const embodimentSource = await readFile(resolve(root, 'src/embodiment.js'), 'utf8');
   for (const stale of ['RealtimeCompanion', 'realtimeBackendAvailable', 'applySpatialIntent']) {
     assert.equal(appSource.includes(stale), false, `stale active runtime symbol remains: ${stale}`);
   }
   assert.equal(indexSource.includes('tap-interaction.js'), false, 'legacy tap bridge is still loaded');
   assert.equal(indexSource.includes('remote-audio'), false, 'legacy realtime audio element is still loaded');
+  assert.equal(indexSource.includes('__NOVA_PRIMARY_FETCH'), false, 'PRIMARY_FETCH restore papered over fetch wrapping');
+  assert.equal(/window\.fetch\s*=/.test(embodimentSource), false, 'embodiment fetch interceptor reintroduced');
+  assert.match(appSource, /executeAction,/, 'chat dispatcher is not exported on __NovaApp');
   await assert.rejects(access(resolve(root, 'src/realtime.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/session.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/health.js')), /ENOENT/);
+  await assert.rejects(access(resolve(root, 'tests/e2e.mjs')), /ENOENT/);
 
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -423,6 +428,22 @@ try {
   assert.equal(shellAfter, shellBefore, 'generic device tap recolored the shell');
 
   // E. Real synthetic touch gestures against OrbitControls: one-finger rotate + two-finger pinch.
+  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true, null, { timeout: 15000 });
+  const overlayHit = await page.evaluate(() => {
+    const el = document.elementFromPoint(160, 500);
+    const panel = document.getElementById('cinematic-director');
+    return {
+      id: el?.id || '',
+      className: String(el?.className || ''),
+      collapsed: panel?.classList.contains('collapsed') === true,
+      deviceVisible: window.__novaScene.device?.visible !== false,
+    };
+  });
+  assert.equal(overlayHit.collapsed, true, 'cinematic director should stay collapsed so mobile orbit can reach the canvas');
+  assert.equal(overlayHit.deviceVisible, true, 'presentation mode hid the service device on boot');
+  assert.equal(overlayHit.className.includes('cinematic'), false, `cinematic overlay ate orbit touch at 160,500: ${JSON.stringify(overlayHit)}`);
+  assert.notEqual(overlayHit.id, 'cinematic-director', 'cinematic panel intercepted the orbit gesture');
+
   const cdp = await context.newCDPSession(page);
   const cameraBefore = await page.evaluate(() => {
     const p = window.__novaScene.camera.position;

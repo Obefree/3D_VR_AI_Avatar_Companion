@@ -372,10 +372,18 @@
     return run;
   }
 
+  async function waitWhileDirectorRuns(timeoutMs = 20000) {
+    const began = performance.now();
+    while (window.__novaCinematicDirector?.running && performance.now() - began < timeoutMs) {
+      await wait(80);
+    }
+  }
+
   async function sendPrompt(text, options = {}) {
     const value = String(text || '').trim();
     if (!value) return false;
     if ($('text-input')) $('text-input').value = '';
+    await waitWhileDirectorRuns();
     activeTurn = true;
     try {
       if (!cloudAiReady) await detectCloudAI(false);
@@ -396,6 +404,7 @@
   }
 
   async function runGuidedDemo() {
+    await waitWhileDirectorRuns();
     await scene.executeTool('move_near', { targetId: 'device' });
     await scene.executeTool('look_at', { targetId: 'red_button' });
     await scene.executeTool('point_at', { targetId: 'red_button' });
@@ -503,6 +512,7 @@
     send(text) { return queueInteraction(() => sendPrompt(text)); },
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
+    executeAction,
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,
