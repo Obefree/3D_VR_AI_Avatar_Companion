@@ -423,6 +423,19 @@ try {
   assert.equal(shellAfter, shellBefore, 'generic device tap recolored the shell');
 
   // E. Real synthetic touch gestures against OrbitControls: one-finger rotate + two-finger pinch.
+  const orbitHit = await page.evaluate(() => {
+    const el = document.elementFromPoint(160, 500);
+    const panel = document.getElementById('cinematic-director');
+    return {
+      id: el?.id || '',
+      tag: el?.tagName || '',
+      collapsed: panel?.classList.contains('collapsed') === true,
+      pointerEvents: panel ? getComputedStyle(panel).pointerEvents : '',
+    };
+  });
+  assert.equal(orbitHit.id, 'scene', `orbit gesture hit overlay instead of canvas: ${JSON.stringify(orbitHit)}`);
+  assert.equal(orbitHit.collapsed, true, 'cinematic director expanded over the mobile orbit zone');
+  assert.equal(orbitHit.pointerEvents, 'none', 'cinematic director still captures canvas pointer events');
   const cdp = await context.newCDPSession(page);
   const cameraBefore = await page.evaluate(() => {
     const p = window.__novaScene.camera.position;
