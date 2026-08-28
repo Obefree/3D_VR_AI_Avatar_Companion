@@ -82,12 +82,7 @@
     </script>
     <script src="./src/groq-auth.js"></script>
     <script src="./src/app.js"></script>
-    <script>window.__NOVA_PRIMARY_FETCH = window.fetch;</script>
     <script src="./src/embodiment.js"></script>
-    <script>
-      // The active app executes actions centrally. Keep the authenticated Groq fetch path primary.
-      if (window.__NOVA_PRIMARY_FETCH) window.fetch = window.__NOVA_PRIMARY_FETCH;
-    </script>
     <script src="./src/humanoid-avatar.js"></script>
     <script src="./src/character-profile.js"></script>
     <script src="./src/scenario-core.js"></script>
