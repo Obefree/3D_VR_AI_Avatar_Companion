@@ -30,7 +30,7 @@ try {
   assert.ok(response && response.ok(), `public URL failed: ${response?.status()}`);
   await page.waitForFunction(() => window.__novaScene && window.__novaEmbodimentReady === true, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaHumanoidReady === true, null, { timeout: 35000 });
-  await page.waitForFunction(() => window.__novaCharacterProfile && window.__novaScenarioCore && window.__NovaBinocularVR, null, { timeout: 10000 });
+  await page.waitForFunction(() => window.__novaCharacterProfile && window.__novaScenarioCore && window.__novaCharacterAnalyzer && window.__NovaBinocularVR, null, { timeout: 10000 });
 
   const initial = await page.evaluate(() => ({
     humanoid: window.__novaHumanoid.getState(),
@@ -51,15 +51,37 @@ try {
 
   await page.click('#nova-scenario-launch');
   await page.waitForSelector('#nova-scenario-modal.open');
-  const script = 'Девушка замечает зрителя и смотрит на него. Она подходит ближе, машет рукой и говорит: «Привет. Я здесь». Затем делает паузу.';
+  await page.waitForSelector('#nova-analyze-character');
+  const script = 'Девушка приветливо замечает зрителя и смотрит на него. Она сама подходит ближе, машет рукой и говорит: «Привет. Я здесь». Затем делает паузу.';
   await page.fill('#nova-scenario-script', script);
+
+  const analysis = await page.evaluate((value) => window.__novaCharacterAnalyzer.localAnalyze(value), script);
+  assert.match(analysis.relationship, /viewer/, 'viewer relationship not extracted');
+  assert.ok(analysis.traits.warmth > 0.6, `warmth not inferred: ${analysis.traits.warmth}`);
+  assert.ok(analysis.movement.vocabulary.some((item) => item.name === 'approach'), 'approach movement not extracted');
+  assert.ok(analysis.movement.vocabulary.some((item) => item.name === 'wave'), 'wave movement not extracted');
+  assert.ok(analysis.dialogueExamples.some((line) => /Привет/.test(line)), 'dialogue example not extracted');
+
+  await page.evaluate((value) => {
+    const analysisResult = window.__novaCharacterAnalyzer.localAnalyze(value);
+    window.__novaCharacterAnalyzer.apply(analysisResult);
+  }, script);
+  const analyzedProfile = await page.evaluate(() => window.__novaCharacterProfile.get());
+  assert.equal(analyzedProfile.analysis?.relationship, 'direct scene partner: viewer');
+  assert.ok(analyzedProfile.analysis?.movementVocabulary?.some((item) => item.name === 'wave'), 'analysis metadata missing movement vocabulary');
+
+  await page.click('#nova-analyze-character-local');
+  await page.waitForSelector('#nova-character-analysis.visible');
+  const analysisText = await page.locator('#nova-character-analysis pre').textContent();
+  assert.match(analysisText || '', /Model native clips:/, 'native animation capability list missing');
+  assert.match(analysisText || '', /Wave/, 'native Wave clip missing from analysis UI');
 
   const plan = await page.evaluate(async (value) => window.__novaScenarioCore.compile(value, { ai: false }), script);
   assert.ok(plan.beats.length >= 2, `too few beats: ${plan.beats.length}`);
   assert.ok(plan.actions.some((action) => action.name === 'face_user'), 'face_user not planned');
   assert.ok(plan.actions.some((action) => action.name === 'approach_user'), 'approach_user not planned');
   assert.ok(plan.actions.some((action) => action.name === 'wave'), 'wave not planned');
-  assert.ok(plan.actions.some((action) => action.name === 'speak' && /Привет/.test(action.args?.text || '')), 'dialogue not preserved');
+  assert.ok(plan.actions.some((action) => action.name === 'speak' && /Привет\. Я здесь/.test(action.args?.text || '')), 'multi-sentence dialogue not preserved');
 
   const before = await page.evaluate(() => ({ x: window.__novaScene.avatar.position.x, z: window.__novaScene.avatar.position.z }));
   const result = await page.evaluate(async (value) => window.__novaScenarioCore.run(value, { ai: false }), script);
