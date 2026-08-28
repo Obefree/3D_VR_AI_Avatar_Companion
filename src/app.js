@@ -366,8 +366,19 @@
     );
   }
 
+  function cinematicRunning() {
+    return Boolean(window.__novaCinematicDirector?.running);
+  }
+
   function queueInteraction(fn) {
-    const run = interactionQueue.then(fn, fn);
+    const wrapped = async () => {
+      if (cinematicRunning()) {
+        toast(isRussian() ? 'Сначала дождитесь окончания сцены.' : 'Wait for the cinematic scene to finish.');
+        return false;
+      }
+      return fn();
+    };
+    const run = interactionQueue.then(wrapped, wrapped);
     interactionQueue = run.catch((error) => console.error('Interaction failed:', error));
     return run;
   }
@@ -415,12 +426,12 @@
   }
 
   function startRecognition() {
-    if (!voiceSession || !voiceRecognition || recognitionRunning || activeTurn || voiceTurnPending) return;
+    if (!voiceSession || !voiceRecognition || recognitionRunning || activeTurn || voiceTurnPending || cinematicRunning()) return;
     try { voiceRecognition.lang = locale(); voiceRecognition.start(); }
     catch (error) { if (!String(error?.message || '').toLowerCase().includes('already')) toast('Voice recognition failed.'); }
   }
   function maybeResumeVoice() {
-    if (!voiceSession || activeTurn || voiceTurnPending) return;
+    if (!voiceSession || activeTurn || voiceTurnPending || cinematicRunning()) return;
     setVoiceButton('Stop listening');
     setTimeout(startRecognition, 250);
   }
@@ -466,7 +477,7 @@
     voiceRecognition.onend = () => {
       recognitionRunning = false;
       if (scene.avatarState === 'listening') scene.setState?.('idle');
-      if (voiceSession && !voiceTurnPending && !activeTurn) maybeResumeVoice();
+      if (voiceSession && !voiceTurnPending && !activeTurn && !cinematicRunning()) maybeResumeVoice();
       else setVoiceButton(voiceSession ? 'Stop listening' : 'Talk to Nova');
     };
     button.addEventListener('click', () => {
@@ -503,6 +514,7 @@
     send(text) { return queueInteraction(() => sendPrompt(text)); },
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
+    executeAction,
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,

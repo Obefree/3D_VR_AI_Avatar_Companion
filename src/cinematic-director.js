@@ -215,15 +215,27 @@ async function execute(action) {
   const name = String(action?.name || '').trim();
   const args = action?.args && typeof action.args === 'object' ? action.args : {};
   window.dispatchEvent(new CustomEvent('nova:cinematic-action', { detail: { name, args } }));
-  if (name === 'speak') return speak(args.text || action.text || '');
-  if (name === 'approach_user') return approachUser(args);
-  if (name === 'walk_to') return walkToTarget(args);
-  if (name === 'pick_up') return pickUp(args);
-  if (name === 'sit') return sitActor();
-  if (name === 'stand') return standActor();
-  if (name === 'pause') { await sleep(clamp(args.ms ?? 450, 80, 4000)); return { ok: true, action: 'pause' }; }
-  if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
-  if (EMBODIMENT_ACTIONS.has(name)) return window.__novaEmbodiment.execute({ name, args });
+  if (name === 'speak') return { ...(await speak(args.text || action.text || '')), via: 'director' };
+  if (name === 'approach_user') return { ...(await approachUser(args)), via: 'director' };
+  if (name === 'walk_to') return { ...(await walkToTarget(args)), via: 'director' };
+  if (name === 'pick_up') return { ...(await pickUp(args)), via: 'director' };
+  if (name === 'sit') return { ...(await sitActor()), via: 'director' };
+  if (name === 'stand') return { ...(await standActor()), via: 'director' };
+  if (name === 'pause' || name === 'wait') {
+    const ms = Number.isFinite(Number(args.ms))
+      ? Number(args.ms)
+      : (Number.isFinite(Number(args.seconds)) ? Number(args.seconds) * 1000 : 450);
+    await sleep(clamp(ms, 80, 4000));
+    return { ok: true, action: name, via: 'director' };
+  }
+  if (SCENE_ACTIONS.has(name) || EMBODIMENT_ACTIONS.has(name)) {
+    if (window.__NovaApp?.executeAction) {
+      const result = await window.__NovaApp.executeAction({ name, args });
+      return { ...(result && typeof result === 'object' ? result : { ok: Boolean(result) }), via: 'app' };
+    }
+    if (SCENE_ACTIONS.has(name)) return { ...(await state.scene.executeTool(name, args)), via: 'scene' };
+    if (EMBODIMENT_ACTIONS.has(name)) return { ...(await window.__novaEmbodiment.execute({ name, args })), via: 'embodiment' };
+  }
   return { ok: false, error: 'cinematic_action_not_allowed', action: name };
 }
 
@@ -265,11 +277,55 @@ function normalizeActions(data) {
   return result.slice(0, 14);
 }
 
+function towardViewer(targetId) {
+  return !targetId || /^(user|viewer|camera|player)$/i.test(String(targetId));
+}
+
+function collapseLocomotion(script, actions) {
+  const lower = String(script || '').toLowerCase();
+  const wantsApproach = /подход|подойти|приближ|ближе|approach|comes closer|come closer|walks to viewer/.test(lower);
+  const result = [];
+  let haveApproach = false;
+  for (const action of actions) {
+    const targetId = action.args?.targetId;
+    if (action.name === 'move_near' && towardViewer(targetId)) {
+      if (!haveApproach && wantsApproach) {
+        result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
+        haveApproach = true;
+      }
+      continue;
+    }
+    if (action.name === 'step' && (wantsApproach || haveApproach || actions.some((item) => item.name === 'approach_user'))) continue;
+    if (action.name === 'approach_user') {
+      if (haveApproach) continue;
+      haveApproach = true;
+      result.push(action);
+      continue;
+    }
+    result.push(action);
+  }
+  return result;
+}
+
+function collapseConsecutive(actions) {
+  const result = [];
+  for (const action of actions) {
+    const previous = result[result.length - 1];
+    if (previous && previous.name === action.name && JSON.stringify(previous.args || {}) === JSON.stringify(action.args || {})) continue;
+    result.push(action);
+  }
+  return result;
+}
+
+function finalizePlan(script, actions) {
+  return collapseConsecutive(enrichPlan(script, collapseLocomotion(script, actions))).slice(0, 16);
+}
+
 function enrichPlan(script, actions) {
   const result = [...actions];
   const lower = String(script).toLowerCase();
   const names = new Set(result.map((a) => a.name));
-  if (/подход|подойти|приближ|approach|comes closer/.test(lower) && !names.has('approach_user')) result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
+  if (/подход|подойти|приближ|ближе|approach|comes closer|come closer/.test(lower) && !names.has('approach_user')) result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
   if (/бер[её]т|возьм|pick.*up|takes the glass/.test(lower) && !names.has('pick_up')) result.push({ name: 'pick_up', args: { targetId: 'actor_glass' } });
   if (/садит|садится|sit/.test(lower) && !names.has('sit')) result.push({ name: 'sit', args: {} });
   const lines = dialogue(script);
@@ -283,7 +339,8 @@ async function compileAI(script) {
   const prompt = [
     'CINEMATIC HUMANOID ACTOR DIRECTOR.',
     'Convert the following scene script into a concise ordered physical performance for Nova.',
-    'Use existing actions where possible: face_user, look_at, point_at, wave, raise_hand, lower_hand, step, turn_body, neutral_pose.',
+    'Use existing actions where possible: face_user, look_at, point_at, wave, raise_hand, lower_hand, turn_body, neutral_pose, approach_user, walk_to.',
+    'For viewer approach use approach_user only. For a named prop or furniture use walk_to with that targetId. Do not also emit move_near or step toward the camera.',
     'Scene targets available: actor_window, actor_table, actor_chair, actor_glass.',
     'Do not narrate the plan. Return the normal Nova tool/action response.',
     `SCRIPT: ${script}`,
@@ -298,14 +355,14 @@ async function compileAI(script) {
   if (!response.ok || data?.ok === false) throw new Error(data?.error || `AI HTTP ${response.status}`);
   const actions = normalizeActions(data);
   if (!actions.length) throw new Error('AI returned no actions');
-  return { source: 'ai', actions: enrichPlan(script, actions) };
+  return { source: 'ai', actions: finalizePlan(script, actions) };
 }
 
 async function compile(script, preferAI = true) {
   if (preferAI) {
     try { return await compileAI(script); } catch (error) { console.warn('Cinematic AI fallback:', error); }
   }
-  return { source: 'fallback', actions: fallbackPlan(script) };
+  return { source: 'fallback', actions: finalizePlan(script, fallbackPlan(script)) };
 }
 
 function label(action) {
@@ -323,14 +380,15 @@ async function run(script, options = {}) {
   try {
     const plan = await compile(script, options.preferAI !== false);
     if (list) list.textContent = plan.actions.map(label).join('  ›  ');
+    const results = [];
     for (let i = 0; i < plan.actions.length; i += 1) {
       const action = plan.actions[i];
       if (log) log.textContent = `${plan.source === 'ai' ? 'AI' : 'Fallback'} director · ${i + 1}/${plan.actions.length}: ${label(action)}`;
-      await execute(action);
+      results.push(await execute(action));
       await sleep(100);
     }
     if (log) log.textContent = `Scene complete · ${plan.actions.length} actions · ${plan.source}`;
-    return { ok: true, ...plan };
+    return { ok: true, ...plan, results };
   } finally { state.running = false; }
 }
 
@@ -340,10 +398,16 @@ function styleUi() {
   style.id = 'cinematic-director-style';
   style.textContent = `
     .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; }
-    .cinematic-director textarea { width:100%; min-height:90px; box-sizing:border-box; resize:vertical; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25); color:#fff; padding:10px; font:inherit; }
+    .cinematic-director textarea { width:100%; min-height:90px; max-height:140px; box-sizing:border-box; resize:vertical; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25); color:#fff; padding:10px; font:inherit; }
     .cinematic-director .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
     .cinematic-director button,.cinematic-director select { border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 11px; background:#171d27; color:#fff; cursor:pointer; }
     .cinematic-director button.primary { background:rgba(70,145,255,.28); }
+    .cinematic-director.collapsed { width:auto; padding:8px 10px; }
+    .cinematic-director.collapsed textarea,
+    .cinematic-director.collapsed .row,
+    .cinematic-director.collapsed #cinematic-director-log,
+    .cinematic-director.collapsed #cinematic-action-list,
+    .cinematic-director.collapsed #vr180-status { display:none; }
     #cinematic-director-log { margin-top:8px; color:#b9d5ff; }
     #cinematic-action-list { margin-top:5px; color:#8f9bad; max-height:42px; overflow:auto; font-size:11px; }
     @media(max-width:760px){.cinematic-director{left:10px;bottom:10px;width:calc(100vw - 20px)}}
@@ -357,14 +421,24 @@ function buildUi() {
   const panel = document.createElement('section');
   panel.id = 'cinematic-director';
   panel.className = 'cinematic-director';
+  if (window.innerWidth < 760) panel.classList.add('collapsed');
   panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;font-weight:700"><span>AI ACTOR · CINEMATIC VR</span><span style="opacity:.55">HUMANOID</span></div>
+    <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;font-weight:700"><span>AI ACTOR · CINEMATIC VR</span><span style="display:flex;gap:8px;align-items:center"><span style="opacity:.55">HUMANOID</span><button id="cinematic-toggle" type="button" style="padding:4px 8px;font-weight:600">Hide</button></span></div>
     <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
     <div class="row"><button id="cinematic-run-ai" class="primary" type="button">AI → Act</button><button id="cinematic-run-local" type="button">Local fallback</button></div>
     <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
   `;
   document.body.appendChild(panel);
   const script = panel.querySelector('#cinematic-script');
+  const toggle = panel.querySelector('#cinematic-toggle');
+  const header = panel.querySelector(':scope > div');
+  const syncToggle = () => {
+    const collapsed = panel.classList.contains('collapsed');
+    toggle.textContent = collapsed ? 'Show' : 'Hide';
+    header.style.marginBottom = collapsed ? '0' : '9px';
+  };
+  syncToggle();
+  toggle.addEventListener('click', () => { panel.classList.toggle('collapsed'); syncToggle(); });
   panel.querySelector('#cinematic-run-ai').addEventListener('click', async () => { try { await run(script.value, { preferAI: true }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
   panel.querySelector('#cinematic-run-local').addEventListener('click', async () => { try { await run(script.value, { preferAI: false }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
 }
@@ -374,5 +448,5 @@ async function init() {
   catch (error) { console.error('Cinematic director init failed:', error); }
 }
 
-window.__novaCinematicDirector = { run, compile, get ready() { return Boolean(window.__novaCinematicDirectorReady); }, get running() { return state.running; } };
+window.__novaCinematicDirector = { run, compile, finalizePlan, get ready() { return Boolean(window.__novaCinematicDirectorReady); }, get running() { return state.running; } };
 void init();
