@@ -170,9 +170,13 @@ try {
   }
   assert.equal(indexSource.includes('tap-interaction.js'), false, 'legacy tap bridge is still loaded');
   assert.equal(indexSource.includes('remote-audio'), false, 'legacy realtime audio element is still loaded');
+  assert.equal(indexSource.includes('__NOVA_PRIMARY_FETCH'), false, 'duplicate fetch interceptor is still papered over');
+  const embodimentSource = await readFile(resolve(root, 'src/embodiment.js'), 'utf8');
+  assert.equal(/window\.fetch\s*=/.test(embodimentSource), false, 'embodiment still wraps fetch beside app.js');
   await assert.rejects(access(resolve(root, 'src/realtime.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/session.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/health.js')), /ENOENT/);
+  await assert.rejects(access(resolve(root, 'tests/e2e.mjs')), /ENOENT/);
 
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
