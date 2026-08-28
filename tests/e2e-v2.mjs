@@ -165,11 +165,15 @@ let browser;
 try {
   const appSource = await readFile(resolve(root, 'src/app.js'), 'utf8');
   const indexSource = await readFile(resolve(root, 'index.html'), 'utf8');
+  const embodimentSource = await readFile(resolve(root, 'src/embodiment.js'), 'utf8');
   for (const stale of ['RealtimeCompanion', 'realtimeBackendAvailable', 'applySpatialIntent']) {
     assert.equal(appSource.includes(stale), false, `stale active runtime symbol remains: ${stale}`);
   }
   assert.equal(indexSource.includes('tap-interaction.js'), false, 'legacy tap bridge is still loaded');
   assert.equal(indexSource.includes('remote-audio'), false, 'legacy realtime audio element is still loaded');
+  assert.equal(indexSource.includes('__NOVA_PRIMARY_FETCH'), false, 'PRIMARY_FETCH paper-over still loaded');
+  assert.equal(embodimentSource.includes('window.fetch ='), false, 'embodiment fetch interceptor still wraps window.fetch');
+  await assert.rejects(access(resolve(root, 'tests/e2e.mjs')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'src/realtime.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/session.js')), /ENOENT/);
   await assert.rejects(access(resolve(root, 'api/health.js')), /ENOENT/);
@@ -296,13 +300,8 @@ try {
     'conversation history was not sent with pronoun follow-up',
   );
 
-  // B3. State-aware next step. Wait for the actual scene actions, not only transcript rendering.
+  // B3. State-aware next step. Actions finish before the assistant transcript, so assert immediately.
   await sendViaUI('Что дальше?');
-  await page.waitForFunction(
-    () => window.__novaScene.lookTarget === 'filter' && window.__novaScene.pointTarget === 'filter',
-    null,
-    { timeout: 5000 },
-  );
   state = await page.evaluate(() => ({
     look: window.__novaScene.lookTarget,
     point: window.__novaScene.pointTarget,
@@ -310,6 +309,7 @@ try {
   }));
   assert.equal(state.step, 'filter_required');
   assert.equal(state.look, 'filter');
+  assert.equal(state.point, 'filter');
   assert.equal(state.point, 'filter');
 
   // B4. Filter physically moves and completes the task.
@@ -422,7 +422,17 @@ try {
   const shellAfter = await page.evaluate(() => window.__novaScene.targets.get('device').material.emissive.getHexString());
   assert.equal(shellAfter, shellBefore, 'generic device tap recolored the shell');
 
+  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true, null, { timeout: 20000 });
+
   // E. Real synthetic touch gestures against OrbitControls: one-finger rotate + two-finger pinch.
+  const orbitHit = await page.evaluate(() => {
+    const el = document.elementFromPoint(160, 500);
+    return { id: el?.id || '', tag: el?.tagName || '', className: String(el?.className || '') };
+  });
+  assert.equal(orbitHit.id, 'scene', `orbit gesture point is covered: ${JSON.stringify(orbitHit)}`);
+  const directorCollapsed = await page.evaluate(() => document.getElementById('cinematic-director')?.classList.contains('collapsed'));
+  assert.equal(directorCollapsed, true, 'cinematic director overlay is expanded on mobile and can steal orbit touches');
+
   const cdp = await context.newCDPSession(page);
   const cameraBefore = await page.evaluate(() => {
     const p = window.__novaScene.camera.position;

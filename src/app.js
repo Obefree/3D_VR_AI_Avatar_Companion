@@ -372,9 +372,18 @@
     return run;
   }
 
+  async function waitWhileDirectorRunning(timeoutMs = 20000) {
+    const began = performance.now();
+    while (window.__novaCinematicDirector?.running && performance.now() - began < timeoutMs) {
+      await wait(40);
+    }
+  }
+
   async function sendPrompt(text, options = {}) {
     const value = String(text || '').trim();
     if (!value) return false;
+    await waitWhileDirectorRunning();
+    if (window.__novaCinematicDirector?.running) return false;
     if ($('text-input')) $('text-input').value = '';
     activeTurn = true;
     try {
@@ -396,6 +405,8 @@
   }
 
   async function runGuidedDemo() {
+    await waitWhileDirectorRunning();
+    if (window.__novaCinematicDirector?.running) return false;
     await scene.executeTool('move_near', { targetId: 'device' });
     await scene.executeTool('look_at', { targetId: 'red_button' });
     await scene.executeTool('point_at', { targetId: 'red_button' });
@@ -416,6 +427,7 @@
 
   function startRecognition() {
     if (!voiceSession || !voiceRecognition || recognitionRunning || activeTurn || voiceTurnPending) return;
+    if (window.__novaCinematicDirector?.running) return;
     try { voiceRecognition.lang = locale(); voiceRecognition.start(); }
     catch (error) { if (!String(error?.message || '').toLowerCase().includes('already')) toast('Voice recognition failed.'); }
   }
@@ -501,6 +513,7 @@
 
   window.__NovaApp = {
     send(text) { return queueInteraction(() => sendPrompt(text)); },
+    executeAction,
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
