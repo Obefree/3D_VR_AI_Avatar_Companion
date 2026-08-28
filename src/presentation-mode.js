@@ -21,13 +21,20 @@
     style.textContent = `
       #cinematic-present-toggle { background:rgba(255,255,255,.11); }
       #cinematic-show-controls { display:none; position:fixed; right:14px; top:14px; z-index:70; border:1px solid rgba(255,255,255,.2); border-radius:10px; background:rgba(7,11,18,.72); color:#fff; padding:8px 11px; cursor:pointer; backdrop-filter:blur(10px); }
+      #cinematic-mobile-launcher { display:none; position:fixed; right:10px; bottom:10px; z-index:72; border:1px solid rgba(255,255,255,.2); border-radius:10px; background:rgba(7,11,18,.78); color:#fff; padding:8px 10px; cursor:pointer; backdrop-filter:blur(10px); font:12px system-ui,sans-serif; }
       html.cinematic-presentation .topbar,
       html.cinematic-presentation .controls,
       html.cinematic-presentation .dev-panel,
       html.cinematic-presentation .transcript,
       html.cinematic-presentation #crosshair,
-      html.cinematic-presentation #cinematic-director { display:none !important; }
+      html.cinematic-presentation #cinematic-director,
+      html.cinematic-presentation #cinematic-mobile-launcher { display:none !important; }
       html.cinematic-presentation #cinematic-show-controls { display:block; }
+      @media (max-width:760px) {
+        #cinematic-mobile-launcher { display:block; }
+        #cinematic-director.cinematic-mobile-collapsed { display:none !important; }
+        #cinematic-director.cinematic-mobile-open { display:block !important; max-height:72vh; overflow:auto; }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -38,6 +45,22 @@
     const button = document.getElementById('cinematic-present-toggle');
     if (button) button.textContent = enabled ? 'Exit presentation' : 'Presentation mode';
     window.dispatchEvent(new CustomEvent('nova:presentation-mode', { detail: { enabled } }));
+  }
+
+  function installMobileLauncher(panel) {
+    if (!window.matchMedia?.('(max-width:760px)').matches || document.getElementById('cinematic-mobile-launcher')) return;
+    panel.classList.add('cinematic-mobile-collapsed');
+    const launcher = document.createElement('button');
+    launcher.id = 'cinematic-mobile-launcher';
+    launcher.type = 'button';
+    launcher.textContent = 'AI actor';
+    launcher.addEventListener('click', () => {
+      const opening = panel.classList.contains('cinematic-mobile-collapsed');
+      panel.classList.toggle('cinematic-mobile-collapsed', !opening);
+      panel.classList.toggle('cinematic-mobile-open', opening);
+      launcher.textContent = opening ? 'Hide actor controls' : 'AI actor';
+    });
+    document.body.appendChild(launcher);
   }
 
   async function init() {
@@ -61,6 +84,8 @@
         restore.textContent = 'Show controls';
         restore.addEventListener('click', () => setPresentation(false));
         document.body.appendChild(restore);
+
+        installMobileLauncher(panel);
 
         window.__novaPresentation = {
           enable: () => setPresentation(true),
