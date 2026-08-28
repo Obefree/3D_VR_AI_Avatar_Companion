@@ -54,9 +54,14 @@
   function splitScenario(script) {
     const text = cleanText(script);
     if (!text) return [];
-    const raw = text
-      .split(/\n+|(?<=[.!?])\s+(?=[А-ЯA-ZЁ«“"])/u)
-      .map((item) => item.trim())
+    const held = [];
+    const masked = text.replace(/[«“"][^»”"]{0,500}[»”"]/g, (chunk) => {
+      held.push(chunk);
+      return `\u0000Q${held.length - 1}\u0000`;
+    });
+    const raw = masked
+      .split(/\n+|(?<=[.!?])\s+(?=[А-ЯA-ZЁ])/u)
+      .map((item) => item.replace(/\u0000Q(\d+)\u0000/g, (_, index) => held[Number(index)]).trim())
       .filter(Boolean);
     const beats = [];
     raw.forEach((segment, index) => {
@@ -94,7 +99,7 @@
     if (!actions.some((item) => `${item.name}:${JSON.stringify(item.args || {})}` === key)) actions.push(action);
   }
 
-  function actionsForBeat(beat, runtimeScene, actorProfile) {
+  function actionsForBeat(beat, runtimeScene, actorProfile, context = {}) {
     const text = `${beat.direction} ${beat.raw}`.toLowerCase();
     const actions = [];
     const targetId = targetFromText(text, runtimeScene);
@@ -103,10 +108,11 @@
     const socialDistance = clamp(movement.personalDistanceMeters ?? 1.35, 0.8, 3.5);
     const gestureIntensity = clamp(movement.gestureIntensity ?? 0.55, 0, 1);
     const gazeEngagement = clamp(movement.gazeEngagement ?? 0.82, 0, 1);
+    const viewerAttention = Boolean(context.viewerAttention);
 
     const referencesViewer = /зрител|геро|пользовател|собесед|viewer|user|hero|camera|камер/.test(text);
     const looks = /смотр|гляд|look|notice|замеч|видит|sees/.test(text);
-    const approaches = /подход|приближ|ид[её]т к|walks? to|approach|comes? closer/.test(text);
+    const approaches = /подход|подойд|приближ|ближе|ид[её]т к|walks? (?:up|to|closer)|comes? closer|approach/.test(text);
     const waves = /машет|помах|wave|greet|приветствует/.test(text);
     const points = /показыва|указывает|point|gesture toward/.test(text);
     const turns = /поворач|turns?|разворач/.test(text);
@@ -115,12 +121,18 @@
     const stepsRight = /вправо|направо|steps? right|moves? right/.test(text);
     const pauses = /пауза|молчит|жд[её]т|pause|waits?|silence/.test(text);
 
-    if (referencesViewer && (looks || gazeEngagement > 0.68 || beat.dialogue.length)) pushUnique(actions, { name: 'face_user', args: {} });
+    if ((referencesViewer || viewerAttention) && (looks || gazeEngagement > 0.68 || beat.dialogue.length)) {
+      pushUnique(actions, { name: 'face_user', args: {} });
+    }
     if (targetId && looks) pushUnique(actions, { name: 'look_at', args: { targetId } });
-    if (turns && referencesViewer) pushUnique(actions, { name: 'face_user', args: {} });
+    if (turns && (referencesViewer || viewerAttention)) pushUnique(actions, { name: 'face_user', args: {} });
     else if (turns && !targetId) pushUnique(actions, { name: 'turn_body', args: { degrees: 45 } });
-    if (approaches && referencesViewer) pushUnique(actions, { name: 'approach_user', args: { distance: socialDistance } });
-    if (approaches && targetId) pushUnique(actions, { name: 'move_near', args: { targetId } });
+    // A named scene object is the destination — do not also walk to the camera.
+    if (approaches && targetId && !referencesViewer) {
+      pushUnique(actions, { name: 'move_near', args: { targetId } });
+    } else if (approaches && (referencesViewer || viewerAttention || !targetId)) {
+      pushUnique(actions, { name: 'approach_user', args: { distance: socialDistance } });
+    }
     if (waves || (/привет|hello|hi\b/.test(text) && gestureIntensity > 0.32 && (character.warmth ?? 0.7) > 0.5)) pushUnique(actions, { name: 'wave', args: { side: 'left' } });
     if (points && targetId) {
       pushUnique(actions, { name: 'look_at', args: { targetId } });
@@ -145,10 +157,15 @@
   function localCompile(script) {
     const runtimeScene = scene();
     const actorProfile = profile();
-    const beats = splitScenario(script).map((beat) => ({
-      ...beat,
-      actions: actionsForBeat(beat, runtimeScene, actorProfile),
-    }));
+    let viewerAttention = false;
+    const beats = splitScenario(script).map((beat) => {
+      const actions = actionsForBeat(beat, runtimeScene, actorProfile, { viewerAttention });
+      const text = `${beat.direction} ${beat.raw}`.toLowerCase();
+      if (/зрител|геро|пользовател|собесед|viewer|user|hero|camera|камер/.test(text) || beat.dialogue.length) {
+        viewerAttention = true;
+      }
+      return { ...beat, actions };
+    });
     const actions = beats.flatMap((beat) => beat.actions);
     if (!actions.length) {
       actions.push({ name: 'face_user', args: {} });
@@ -174,10 +191,15 @@
   function mergePlans(localPlan, aiActions) {
     if (!aiActions.length) return localPlan;
     const actions = [];
-    const dialogueActions = localPlan.actions.filter((action) => action.name === 'speak');
-    for (const action of aiActions) pushUnique(actions, action);
-    for (const action of dialogueActions) actions.push(action);
-    if (!actions.some((action) => action.name === 'face_user') && dialogueActions.length) actions.unshift({ name: 'face_user', args: {} });
+    // Local character-aware beats stay the spine so AI extras cannot drop approach/wave/speech.
+    for (const action of localPlan.actions) pushUnique(actions, action);
+    for (const action of aiActions) {
+      if (action.name === 'speak') continue;
+      pushUnique(actions, action);
+    }
+    if (!actions.some((action) => action.name === 'face_user') && actions.some((action) => action.name === 'speak')) {
+      actions.unshift({ name: 'face_user', args: {} });
+    }
     return { ...localPlan, source: 'ai+local', actions };
   }
 
@@ -185,7 +207,7 @@
     const endpoint = window.__NOVA_AI_ENDPOINT;
     if (!endpoint) return localPlan;
     const runtimeScene = scene();
-    const actionVocabulary = [...SCENE_ACTIONS, ...EMBODIMENT_ACTIONS].join(', ');
+    const actionVocabulary = [...ALL_ACTIONS].join(', ');
     const message = [
       'SCENARIO DIRECTOR MODE. You are planning embodied acting, not chatting with the user.',
       profilePrompt(),
@@ -235,10 +257,8 @@
 
   async function approachUser(args = {}) {
     const runtimeScene = scene();
-    const THREE = window.__novaEmbodiment?.THREE || (await import('three'));
-    const viewer = typeof runtimeScene.getViewerWorldPosition === 'function'
-      ? runtimeScene.getViewerWorldPosition()
-      : runtimeScene.camera.getWorldPosition(new THREE.Vector3());
+    const viewer = viewerWorldPosition(runtimeScene);
+    if (!viewer || !runtimeScene?.avatar) return { ok: false, error: 'viewer_unavailable' };
     const start = runtimeScene.avatar.position.clone();
     const desiredDistance = clamp(args.distance ?? profile()?.movement?.personalDistanceMeters ?? 1.35, 0.8, 3.5);
     const flatTarget = viewer.clone();
