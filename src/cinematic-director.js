@@ -120,23 +120,6 @@ async function approachUser(args = {}) {
   return { ok: true, action: 'approach_user', moved: Number(move.toFixed(2)) };
 }
 
-async function walkToTarget(args = {}) {
-  const targetId = args.targetId;
-  const target = state.scene.targets.get(targetId);
-  if (!target) return { ok: false, error: 'unknown_target', targetId };
-  const targetPos = target.position?.clone?.() || target.mesh?.getWorldPosition?.(new THREE.Vector3());
-  if (!targetPos) return { ok: false, error: 'target_position_missing', targetId };
-  const start = state.scene.avatar.position.clone();
-  const direction = targetPos.clone().setY(start.y).sub(start);
-  const distance = direction.length();
-  const stop = clamp(args.stopDistance ?? 0.72, 0.45, 1.4);
-  const end = distance > stop ? start.clone().add(direction.normalize().multiplyScalar(distance - stop)) : start.clone();
-  state.scene.setState?.('moving');
-  await tween(Math.max(650, start.distanceTo(end) * 700), (t) => state.scene.avatar.position.lerpVectors(start, end, t));
-  state.scene.setState?.('idle');
-  return { ok: true, action: 'walk_to', targetId };
-}
-
 async function pickUp(args = {}) {
   const targetId = args.targetId || 'actor_glass';
   const target = state.scene.targets.get(targetId);
@@ -211,19 +194,27 @@ async function speak(text) {
   return { ok: true, action: 'speak', text: value };
 }
 
+async function dispatchShared(action) {
+  const name = action?.name;
+  const args = action?.args && typeof action.args === 'object' ? action.args : {};
+  if (window.__NovaApp?.executeAction) return window.__NovaApp.executeAction({ name, args });
+  if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
+  if (EMBODIMENT_ACTIONS.has(name)) return window.__novaEmbodiment.execute({ name, args });
+  return { ok: false, error: 'shared_dispatcher_missing', action: name };
+}
+
 async function execute(action) {
   const name = String(action?.name || '').trim();
   const args = action?.args && typeof action.args === 'object' ? action.args : {};
   window.dispatchEvent(new CustomEvent('nova:cinematic-action', { detail: { name, args } }));
   if (name === 'speak') return speak(args.text || action.text || '');
   if (name === 'approach_user') return approachUser(args);
-  if (name === 'walk_to') return walkToTarget(args);
+  if (name === 'walk_to') return dispatchShared({ name: 'move_near', args: { targetId: args.targetId } });
   if (name === 'pick_up') return pickUp(args);
   if (name === 'sit') return sitActor();
   if (name === 'stand') return standActor();
   if (name === 'pause') { await sleep(clamp(args.ms ?? 450, 80, 4000)); return { ok: true, action: 'pause' }; }
-  if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
-  if (EMBODIMENT_ACTIONS.has(name)) return window.__novaEmbodiment.execute({ name, args });
+  if (SCENE_ACTIONS.has(name) || EMBODIMENT_ACTIONS.has(name)) return dispatchShared({ name, args });
   return { ok: false, error: 'cinematic_action_not_allowed', action: name };
 }
 
@@ -239,7 +230,7 @@ function fallbackPlan(script) {
   if (/подход|подойти|приближ|approach|comes closer|walks to viewer/.test(lower)) plan.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
   if (/машет|помах|wave|greet/.test(lower)) plan.push({ name: 'wave', args: { side: 'left' } });
   if (/стакан|glass/.test(lower)) {
-    plan.push({ name: 'walk_to', args: { targetId: 'actor_table', stopDistance: 0.78 } });
+    plan.push({ name: 'move_near', args: { targetId: 'actor_table' } });
     plan.push({ name: 'look_at', args: { targetId: 'actor_glass' } });
     plan.push({ name: 'point_at', args: { targetId: 'actor_glass' } });
   }
@@ -315,6 +306,9 @@ function label(action) {
 }
 
 async function run(script, options = {}) {
+  if (!options._queued && window.__NovaApp?.enqueue) {
+    return window.__NovaApp.enqueue(() => run(script, { ...options, _queued: true }));
+  }
   if (state.running) throw new Error('Scene is already running');
   await waitForRuntime();
   state.running = true;
@@ -339,14 +333,18 @@ function styleUi() {
   const style = document.createElement('style');
   style.id = 'cinematic-director-style';
   style.textContent = `
-    .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; }
+    .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; pointer-events:none; }
+    .cinematic-director textarea, .cinematic-director button, .cinematic-director select, .cinematic-director label, .cinematic-director input { pointer-events:auto; }
     .cinematic-director textarea { width:100%; min-height:90px; box-sizing:border-box; resize:vertical; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25); color:#fff; padding:10px; font:inherit; }
     .cinematic-director .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
     .cinematic-director button,.cinematic-director select { border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 11px; background:#171d27; color:#fff; cursor:pointer; }
     .cinematic-director button.primary { background:rgba(70,145,255,.28); }
     #cinematic-director-log { margin-top:8px; color:#b9d5ff; }
     #cinematic-action-list { margin-top:5px; color:#8f9bad; max-height:42px; overflow:auto; font-size:11px; }
-    @media(max-width:760px){.cinematic-director{left:10px;bottom:10px;width:calc(100vw - 20px)}}
+    @media(max-width:760px){
+      .cinematic-director{left:10px;right:10px;width:auto;bottom:10px;max-height:24vh;overflow:auto;padding:8px}
+      .cinematic-director textarea{min-height:44px;max-height:64px}
+    }
   `;
   document.head.appendChild(style);
 }

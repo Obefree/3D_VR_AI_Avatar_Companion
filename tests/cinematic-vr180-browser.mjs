@@ -1,8 +1,53 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { resolve, extname, normalize } from 'node:path';
 import { chromium } from 'playwright';
 
-const PUBLIC_REF = process.env.PUBLIC_REF || process.env.GITHUB_SHA || 'feature/ai-director-vr180-headset';
-const PUBLIC_URL = `https://cdn.githubraw.com/Obefree/3D_VR_AI_Avatar_Companion/${PUBLIC_REF}/index.html`;
+const root = resolve(process.cwd());
+const mime = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+};
+
+const server = createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname === '/api/chat') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({
+        ok: true,
+        source: 'command-engine',
+        generative: false,
+        aiAvailable: true,
+        text: 'Local cinematic mock.',
+        intent: 'conversation',
+        actions: [],
+        extendedActions: [],
+      }));
+      return;
+    }
+    const relative = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
+    const safe = normalize(relative).replace(/^(\.\.(\/|\\|$))+/, '');
+    const file = resolve(root, safe);
+    if (!file.startsWith(root)) {
+      res.writeHead(403);
+      return res.end('forbidden');
+    }
+    const data = await readFile(file);
+    res.writeHead(200, { 'content-type': mime[extname(file)] || 'application/octet-stream' });
+    res.end(data);
+  } catch (error) {
+    res.writeHead(404);
+    res.end(String(error?.message || 'not found'));
+  }
+});
+
+await new Promise((done) => server.listen(0, '127.0.0.1', done));
+const port = server.address().port;
+const base = `http://127.0.0.1:${port}/`;
 
 let browser;
 try {
@@ -13,7 +58,7 @@ try {
       constructor(text) { this.text = text; this.lang = ''; this.rate = 1; this.pitch = 1; this.onend = null; this.onerror = null; }
     }
     Object.defineProperty(window, 'SpeechSynthesisUtterance', { value: MockUtterance, configurable: true });
-    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel(){}, speak(u){ setTimeout(() => u.onend?.(), 25); } } });
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel() {}, speak(u) { setTimeout(() => u.onend?.(), 25); } } });
   });
 
   const page = await context.newPage();
@@ -21,8 +66,8 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
 
-  const response = await page.goto(PUBLIC_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  assert.ok(response && response.ok(), `public URL failed: ${response?.status()}`);
+  const response = await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  assert.ok(response && response.ok(), `local runtime failed: ${response?.status()}`);
   await page.waitForFunction(() => window.__novaScene && window.__novaEmbodimentReady === true, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaHumanoidReady === true, null, { timeout: 35000 });
   await page.waitForFunction(() => window.__novaCinematicDirectorReady === true && window.__novaVR180 && window.__novaPresentation, null, { timeout: 20000 });
@@ -34,6 +79,7 @@ try {
     presets: window.__novaVR180.presets,
     baselines: window.__novaVR180.baselines,
     deviceVisible: window.__novaScene.device?.visible,
+    hasDispatcher: typeof window.__NovaApp?.executeAction === 'function',
   }));
 
   assert.ok(initial.targets.includes('actor_window'), 'cinematic window target missing at runtime');
@@ -41,7 +87,8 @@ try {
   assert.ok(initial.targets.includes('actor_glass'), 'cinematic glass target missing at runtime');
   assert.equal(initial.humanoid.ready, true, 'humanoid not ready');
   assert.equal(initial.humanoid.modelVisible, true, 'humanoid model not visible');
-  assert.equal(initial.deviceVisible, false, 'legacy service device should be hidden in cinematic mode');
+  assert.equal(initial.deviceVisible, true, 'service device must stay visible until presentation mode');
+  assert.equal(initial.hasDispatcher, true, 'NovaApp.executeAction dispatcher missing');
   assert.equal(initial.presets.draft.width, 4096);
   assert.equal(initial.presets.draft.height, 2048);
   assert.equal(initial.presets.quest.width, 5760);
@@ -61,10 +108,14 @@ try {
   const present = await page.evaluate(() => ({
     enabled: window.__novaPresentation.enabled,
     classOnRoot: document.documentElement.classList.contains('cinematic-presentation'),
+    deviceVisible: window.__novaScene.device?.visible,
   }));
   assert.equal(present.enabled, true, 'presentation API did not enable');
   assert.equal(present.classOnRoot, true, 'presentation CSS class missing');
+  assert.equal(present.deviceVisible, false, 'presentation mode should hide the service device');
   await page.evaluate(() => window.__novaPresentation.disable());
+  const restored = await page.evaluate(() => window.__novaScene.device?.visible);
+  assert.equal(restored, true, 'exiting presentation should restore the service device');
 
   const finalState = await page.evaluate(() => ({
     avatar: { x: window.__novaScene.avatar.position.x, y: window.__novaScene.avatar.position.y, z: window.__novaScene.avatar.position.z },
@@ -94,8 +145,8 @@ try {
   assert.equal(errors.length, 0, `browser errors: ${errors.join(' | ')}`);
 
   console.log('CINEMATIC_VR180_BROWSER_PASS');
-  console.log(PUBLIC_URL);
   await context.close();
 } finally {
   await browser?.close();
+  server.close();
 }

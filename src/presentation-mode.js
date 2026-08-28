@@ -1,17 +1,30 @@
 (() => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   let enabled = false;
+  let hidden = [];
 
-  function hideLegacySceneProps(scene) {
-    if (!scene) return;
-    if (scene.device) scene.device.visible = false;
+  function collectLegacyProps(scene) {
+    if (!scene) return [];
+    const targets = [];
+    if (scene.device) targets.push(scene.device);
     if (scene.environmentGroup?.children?.length) {
-      // Keep the floor, remove the diagnostic grid and old service pedestal.
-      scene.environmentGroup.children.forEach((child, index) => { if (index > 0) child.visible = false; });
+      scene.environmentGroup.children.forEach((child, index) => { if (index > 0) targets.push(child); });
     }
     for (const [id, target] of scene.targets || []) {
-      if (String(id).startsWith('user_') && target?.mesh) target.mesh.visible = false;
+      if (String(id).startsWith('user_') && target?.mesh) targets.push(target.mesh);
     }
+    return targets;
+  }
+
+  function applyLegacyVisibility(scene, hide) {
+    if (!scene) return;
+    if (hide) {
+      hidden = collectLegacyProps(scene).map((obj) => ({ obj, visible: obj.visible }));
+      for (const item of hidden) item.obj.visible = false;
+      return;
+    }
+    for (const item of hidden) item.obj.visible = item.visible;
+    hidden = [];
   }
 
   function injectStyle() {
@@ -35,6 +48,7 @@
   function setPresentation(value) {
     enabled = Boolean(value);
     document.documentElement.classList.toggle('cinematic-presentation', enabled);
+    applyLegacyVisibility(window.__novaScene, enabled);
     const button = document.getElementById('cinematic-present-toggle');
     if (button) button.textContent = enabled ? 'Exit presentation' : 'Presentation mode';
     window.dispatchEvent(new CustomEvent('nova:presentation-mode', { detail: { enabled } }));
@@ -46,7 +60,6 @@
       const scene = window.__novaScene;
       const panel = document.getElementById('cinematic-director');
       if (scene?.scene && panel) {
-        hideLegacySceneProps(scene);
         const row = panel.querySelector('.row') || panel;
         const button = document.createElement('button');
         button.id = 'cinematic-present-toggle';
