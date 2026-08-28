@@ -1,6 +1,6 @@
 import { generateText } from 'ai';
 
-const MODEL = 'openai/gpt-5.6-sol';
+const MODEL = process.env.NOVA_AI_GATEWAY_MODEL || 'openai/gpt-oss-20b';
 const ALLOWED_ACTIONS = new Set([
   'look_at',
   'point_at',
@@ -9,14 +9,24 @@ const ALLOWED_ACTIONS = new Set([
   'press_button',
   'remove_filter',
   'face_user',
+  'raise_hand',
+  'lower_hand',
+  'wave',
+  'step',
+  'turn_body',
+  'neutral_pose',
+  'create_object',
+  'delete_object',
+  'move_object',
 ]);
-const TARGETS = new Set(['device', 'red_button', 'filter']);
+const BUILTIN_TARGETS = new Set(['device', 'red_button', 'filter']);
+const TARGET_ID_RE = /^[a-z0-9а-яё_-]{1,64}$/i;
 
 const SYSTEM = `You are Nova, an embodied spatial AI companion inside a browser 3D/XR scene.
 You do not merely describe actions: when the user asks you to act in the scene, return semantic actions for the client to execute.
 
 You know only the supplied scene context and conversation history. Never claim camera/sensor access beyond that context.
-The scene contains these semantic targets only: device, red_button, filter.
+The scene targets are supplied in CURRENT SCENE CONTEXT. Use only target ids present there.
 The maintenance state is authoritative:
 - reset_required: the red reset button must be pressed before the filter can be removed.
 - filter_required: reset is complete; the filter is the next step.
@@ -30,6 +40,15 @@ Allowed actions only:
 - press_button(targetId=red_button)
 - remove_filter(targetId=filter)
 - face_user()
+- raise_hand(side?)
+- lower_hand(side?)
+- wave(side?, seconds?)
+- step(direction?, distance?)
+- turn_body(degrees?)
+- neutral_pose()
+- create_object(shape?, color?, size?, direction?, distance?, position?, label?)
+- delete_object(targetId?)
+- move_object(targetId, direction?, distance?, position?)
 
 Important behavioral rules:
 1. Understand natural language semantically, including Russian/English, pronouns and follow-ups from history. Do not rely on the client to keyword-route the request.
@@ -39,7 +58,8 @@ Important behavioral rules:
 5. When asked what is next, use the actual task step. If filter_required, direct attention to the filter. If complete, say the task is complete and do not recommend reset again.
 6. remove_filter is valid only after resetPressed=true. If reset is not done, do not request remove_filter; explain the prerequisite and optionally point to red_button.
 7. If phase=after_tools, tool results are ground truth. Never claim success for a failed action. Correct the answer and, if helpful, return only safe corrective actions.
-8. Keep spoken text concise: normally 1-2 short sentences.
+8. For body movement, gestures and editable-world operations, return extendedActions rather than actions.
+9. Keep spoken text concise: normally 1-2 short sentences.
 
 Return ONLY one valid JSON object, with no markdown or commentary:
 {
@@ -47,6 +67,9 @@ Return ONLY one valid JSON object, with no markdown or commentary:
   "intent": "short_intent_name",
   "actions": [
     {"name":"look_at","args":{"targetId":"red_button"}}
+  ],
+  "extendedActions": [
+    {"name":"raise_hand","args":{"side":"left"}}
   ]
 }
 Use an empty actions array when no physical/spatial action is needed.`;
@@ -60,11 +83,34 @@ function sanitizeHistory(value) {
     .filter((item) => item.content);
 }
 
+function safeTargetId(value) {
+  const id = String(value || '').trim();
+  return TARGET_ID_RE.test(id) && !id.startsWith('__') ? id : '';
+}
+
+function collectSceneTargetIds(value) {
+  const ids = new Set(BUILTIN_TARGETS);
+  const add = (item) => {
+    const id = safeTargetId(item?.id || item?.targetId);
+    if (id) ids.add(id);
+  };
+  if (Array.isArray(value?.visibleTargets)) value.visibleTargets.forEach(add);
+  if (Array.isArray(value?.objects)) value.objects.forEach(add);
+  if (Array.isArray(value?.editableWorld?.dynamicObjectIds)) {
+    value.editableWorld.dynamicObjectIds.forEach((id) => {
+      const safe = safeTargetId(id);
+      if (safe) ids.add(safe);
+    });
+  }
+  return ids;
+}
+
 function sanitizeScene(value) {
   if (!value || typeof value !== 'object') return {};
+  const targetIds = collectSceneTargetIds(value);
   const visibleTargets = Array.isArray(value.visibleTargets)
     ? value.visibleTargets
-        .filter((item) => item && TARGETS.has(item.id))
+        .filter((item) => item && targetIds.has(item.id))
         .slice(0, 8)
         .map((item) => ({
           id: item.id,
@@ -73,7 +119,7 @@ function sanitizeScene(value) {
         }))
     : [];
   return {
-    gazeTarget: TARGETS.has(value.gazeTarget) ? value.gazeTarget : null,
+    gazeTarget: targetIds.has(value.gazeTarget) ? value.gazeTarget : null,
     visibleTargets,
     task: {
       name: 'service_device',
@@ -84,10 +130,26 @@ function sanitizeScene(value) {
     deviceState: {
       resetPressed: Boolean(value.deviceState?.resetPressed),
       filterRemoved: Boolean(value.deviceState?.filterRemoved),
-      lastActivatedTarget: TARGETS.has(value.deviceState?.lastActivatedTarget)
+      lastActivatedTarget: targetIds.has(value.deviceState?.lastActivatedTarget)
         ? value.deviceState.lastActivatedTarget
         : null,
     },
+    space: value.space && typeof value.space === 'object' ? value.space : null,
+    avatar: value.avatar && typeof value.avatar === 'object' ? value.avatar : null,
+    editableWorld: value.editableWorld && typeof value.editableWorld === 'object' ? value.editableWorld : null,
+    objects: Array.isArray(value.objects)
+      ? value.objects
+          .filter((item) => item && targetIds.has(item.id))
+          .slice(0, 24)
+          .map((item) => ({
+            id: item.id,
+            label: typeof item.label === 'string' ? item.label.slice(0, 80) : item.id,
+            dynamic: Boolean(item.dynamic),
+            position: item.position || null,
+            distanceFromAvatar: Number.isFinite(Number(item.distanceFromAvatar)) ? Number(item.distanceFromAvatar) : null,
+            relativeToAvatar: item.relativeToAvatar || null,
+          }))
+      : [],
   };
 }
 
@@ -101,7 +163,7 @@ function sanitizeToolResults(value) {
     result: {
       ok: Boolean(item?.result?.ok),
       error: typeof item?.result?.error === 'string' ? item.result.error.slice(0, 100) : null,
-      targetId: TARGETS.has(item?.result?.targetId) ? item.result.targetId : null,
+      targetId: safeTargetId(item?.result?.targetId) || null,
       taskStep: ['reset_required', 'filter_required', 'complete'].includes(item?.result?.taskStep)
         ? item.result.taskStep
         : null,
@@ -109,13 +171,14 @@ function sanitizeToolResults(value) {
   }));
 }
 
-function normalizeAction(raw) {
+function normalizeAction(raw, targetIds) {
   if (!raw || typeof raw !== 'object' || !ALLOWED_ACTIONS.has(raw.name)) return null;
   const args = raw.args && typeof raw.args === 'object' ? { ...raw.args } : {};
 
   if (['look_at', 'point_at', 'highlight', 'move_near'].includes(raw.name)) {
-    if (!TARGETS.has(args.targetId)) return null;
+    if (!targetIds.has(args.targetId)) return null;
   }
+  if (['delete_object', 'move_object'].includes(raw.name) && args.targetId && !targetIds.has(args.targetId)) return null;
   if (raw.name === 'press_button') args.targetId = 'red_button';
   if (raw.name === 'remove_filter') args.targetId = 'filter';
   if (raw.name === 'face_user') delete args.targetId;
@@ -148,17 +211,22 @@ function extractJson(text) {
   return null;
 }
 
-function normalizeModelReply(parsed) {
+function normalizeModelReply(parsed, scene) {
   if (!parsed || typeof parsed !== 'object') return null;
   const text = typeof parsed.text === 'string' ? parsed.text.trim().slice(0, 1000) : '';
   if (!text) return null;
+  const targetIds = collectSceneTargetIds(scene);
   const actions = Array.isArray(parsed.actions)
-    ? parsed.actions.map(normalizeAction).filter(Boolean).slice(0, 8)
+    ? parsed.actions.map((action) => normalizeAction(action, targetIds)).filter(Boolean).slice(0, 8)
+    : [];
+  const extendedActions = Array.isArray(parsed.extendedActions)
+    ? parsed.extendedActions.map((action) => normalizeAction(action, targetIds)).filter(Boolean).slice(0, 8)
     : [];
   return {
     text,
     intent: typeof parsed.intent === 'string' ? parsed.intent.trim().slice(0, 80) : '',
     actions,
+    extendedActions,
   };
 }
 
@@ -190,7 +258,7 @@ async function generateStructured({ message, history, scene, toolResults, phase,
       },
     });
 
-    const normalized = normalizeModelReply(extractJson(text));
+    const normalized = normalizeModelReply(extractJson(text), scene);
     if (normalized) return normalized;
   }
 
@@ -206,9 +274,9 @@ export default async function handler(req, res) {
     );
     return res.status(configured ? 200 : 503).json({
       ok: configured,
-      provider: 'vercel-ai-gateway',
+      provider: 'vercel-ai-gateway-adapter',
       model: MODEL,
-      contract: 'semantic-actions-v1',
+      contract: 'embodied-editable-world-v3',
     });
   }
 

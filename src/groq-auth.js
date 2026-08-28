@@ -1,5 +1,6 @@
 (() => {
-  const PROXY = window.__NOVA_GROQ_PROXY || 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq';
+  const runtimeConfig = window.__NovaRuntimeConfig || {};
+  const PROXY = window.__NOVA_GROQ_PROXY || runtimeConfig.groqProxy || 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq';
   const KEY_STORAGE = 'nova_groq_key_v1';
   const nativeFetch = window.fetch.bind(window);
   const state = {
@@ -9,8 +10,8 @@
     keyPresent: false,
     keyStatus: 'unknown',
   };
-  const active = String(window.__NOVA_AI_ENDPOINT || '').includes('nova-groq');
-  const serverManaged = PROXY.includes('/functions/v1/nova-groq-vault');
+  const active = runtimeConfig.transport === 'supabase-groq' || String(window.__NOVA_AI_ENDPOINT || '').includes('nova-groq');
+  const serverManaged = Boolean(runtimeConfig.serverManaged) || PROXY.includes('/functions/v1/nova-groq-vault');
 
   const getKey = () => {
     if (serverManaged) return '';

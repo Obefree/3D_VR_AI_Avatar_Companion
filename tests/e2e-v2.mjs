@@ -130,7 +130,7 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     if (url.pathname === '/api/chat') {
       if (req.method === 'GET') {
-        return json(res, 200, { ok: true, provider: 'e2e-mock', contract: 'semantic-actions-v1' });
+        return json(res, 200, { ok: true, provider: 'e2e-mock', contract: 'embodied-editable-world-v3' });
       }
       if (req.method === 'POST') {
         let raw = '';

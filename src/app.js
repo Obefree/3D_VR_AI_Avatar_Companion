@@ -1,8 +1,9 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const messages = $('messages');
+  const runtimeConfig = window.__NovaRuntimeConfig || {};
   const nativeFetch = window.fetch.bind(window);
-  const AI_ENDPOINT = window.__NOVA_AI_ENDPOINT || 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-chat';
+  const AI_ENDPOINT = runtimeConfig.aiEndpoint || window.__NOVA_AI_ENDPOINT || './api/chat';
   const BASE_ACTIONS = new Set(['look_at','point_at','highlight','move_near','press_button','remove_filter','face_user']);
   const EXTENDED_ACTIONS = new Set(['raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object']);
   const DYNAMIC_SPATIAL_ACTIONS = new Set(['look_at','point_at','highlight','move_near']);
@@ -506,7 +507,7 @@
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,
-    getAIState() { return { ready: cloudAiReady, endpoint: AI_ENDPOINT }; },
+    getAIState() { return { ready: cloudAiReady, endpoint: AI_ENDPOINT, transport: runtimeConfig.transport || 'local-api' }; },
   };
 
   bindUI();

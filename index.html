@@ -69,24 +69,10 @@
       <div id="toast" role="status"></div>
     </div>
 
-    <script>
-      if (!window.__NOVA_AI_ENDPOINT) {
-        if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
-          window.__NOVA_AI_ENDPOINT = './api/chat';
-        } else {
-          const groqEndpoint = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq-vault';
-          window.__NOVA_GROQ_PROXY = groqEndpoint;
-          window.__NOVA_AI_ENDPOINT = groqEndpoint;
-        }
-      }
-    </script>
+    <script src="./src/runtime-config.js"></script>
     <script src="./src/groq-auth.js"></script>
     <script src="./src/app.js"></script>
-    <script>window.__NOVA_PRIMARY_FETCH = window.fetch;</script>
     <script src="./src/embodiment.js"></script>
-    <script>
-      if (window.__NOVA_PRIMARY_FETCH) window.fetch = window.__NOVA_PRIMARY_FETCH;
-    </script>
     <script src="./src/humanoid-avatar.js"></script>
     <script src="./src/xr-controls.js"></script>
     <script type="module" src="./src/cinematic-director.js"></script>

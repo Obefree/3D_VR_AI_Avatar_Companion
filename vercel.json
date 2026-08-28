@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/session.js": {
+    "api/chat.js": {
       "maxDuration": 60
     }
   },

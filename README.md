@@ -69,8 +69,9 @@ See `VR180_HEADSET.md` for playback/export notes.
 - Skeleton-driven gaze, pointing, hand raise/wave and conversational gestures.
 - Actor-facing and optional facial-morph polish layer.
 - Browser SpeechRecognition and SpeechSynthesis.
-- Groq server-side AI through a Supabase Edge Function; no API key is exposed to the browser.
+- Groq server-side AI through a Supabase Edge Function; no API key is exposed in the public browser build.
 - Deterministic fast path for simple commands and Groq for conversation/compound interpretation.
+- Optional local `/api/chat` adapter for Vercel AI Gateway development. It is not the public demo backend.
 - Editable semantic 3D world with an allowlisted action router.
 - Browser VR180 stereo recorder.
 
@@ -133,6 +134,19 @@ npx serve . -l 4173
 ```
 
 Open `http://localhost:4173`.
+
+Localhost uses `./api/chat` by default so local test prompts do not leave the machine unless the serverless adapter is explicitly configured. The public build uses the server-managed Supabase/Groq vault endpoint. Add `?ai=vault` locally to exercise the public backend, or `?ai=user-groq` to test the legacy browser-key Groq proxy.
+
+## AI transport
+
+Runtime AI endpoint selection lives in `src/runtime-config.js`.
+
+- public/default site: Supabase Edge Function `nova-groq-vault`;
+- localhost/default: `./api/chat`;
+- optional local Vercel AI Gateway adapter: `api/chat.js`, model from `NOVA_AI_GATEWAY_MODEL` or `openai/gpt-oss-20b`;
+- legacy user-key Groq proxy: only when explicitly requested with `?ai=user-groq`.
+
+The current public health endpoint reports the active upstream provider at runtime. Do not infer the live model from `api/chat.js`, because that file is only the optional local adapter.
 
 ## Verification
 

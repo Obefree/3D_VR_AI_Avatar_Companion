@@ -5,7 +5,7 @@ import { resolve, extname, normalize } from 'node:path';
 import { chromium } from 'playwright';
 
 const root = resolve(process.cwd());
-const AI_ENDPOINT = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-chat';
+const AI_ENDPOINT = 'https://ugjjifmlivdufshkhmpa.supabase.co/functions/v1/nova-groq-vault';
 const mime = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -17,7 +17,7 @@ const health = await fetch(AI_ENDPOINT, { headers: { accept: 'application/json' 
 assert.equal(health.status, 200, `real AI health failed: ${health.status}`);
 const healthJson = await health.json();
 assert.equal(healthJson.ok, true, 'real AI backend reported not ready');
-assert.match(String(healthJson.contract || ''), /embodied-editable-world/i);
+assert.match(String(healthJson.contract || ''), /embodied-(groq-vault|editable-world)/i);
 
 const server = createServer(async (req, res) => {
   try {
@@ -85,19 +85,19 @@ try {
   await page.waitForFunction(() => window.__novaScene && window.__NovaApp, null, { timeout: 25000 });
   await page.waitForFunction(() => window.__novaEmbodimentReady === true, null, { timeout: 25000 });
   await page.waitForFunction(
-    () => document.getElementById('transport-state')?.textContent === 'AI ready',
+    () => /AI ready|Groq:/i.test(document.getElementById('transport-state')?.textContent || ''),
     null,
     { timeout: 20000 },
   );
 
   await page.click('#live-button');
   await page.waitForFunction(
-    () => document.getElementById('live-button')?.textContent === 'AI connected',
+    () => /AI connected|Groq connected/i.test(document.getElementById('live-button')?.textContent || ''),
     null,
     { timeout: 10000 },
   );
   assert.equal(await page.textContent('#mode-pill'), 'AI mode');
-  assert.equal(await page.textContent('#connection-pill'), 'Connected');
+  assert.match(await page.textContent('#connection-pill'), /Connected|Groq ready/i);
 
   async function send(text, predicate, timeout = 30000) {
     const before = await page.locator('#messages .message').count();
@@ -184,9 +184,8 @@ try {
 
   console.log('REAL_BACKEND_SMOKE_PASS');
   console.log(JSON.stringify({
-    backend: healthJson.provider,
-    upstream: healthJson.upstream,
-    model: healthJson.model,
+    provider: healthJson.provider,
+    models: healthJson.models,
     bodyAware: Boolean(state.avatar?.bodyParts),
     sceneObjects: state.objects?.length,
     finalTaskStep: state.task.step,
