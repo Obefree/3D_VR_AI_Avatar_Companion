@@ -21,7 +21,7 @@
     style.textContent = `
       #cinematic-present-toggle { background:rgba(255,255,255,.11); }
       #cinematic-show-controls { display:none; position:fixed; right:14px; top:14px; z-index:70; border:1px solid rgba(255,255,255,.2); border-radius:10px; background:rgba(7,11,18,.72); color:#fff; padding:8px 11px; cursor:pointer; backdrop-filter:blur(10px); }
-      #cinematic-mobile-launcher { display:none; position:fixed; right:10px; bottom:10px; z-index:72; border:1px solid rgba(255,255,255,.2); border-radius:10px; background:rgba(7,11,18,.78); color:#fff; padding:8px 10px; cursor:pointer; backdrop-filter:blur(10px); font:12px system-ui,sans-serif; }
+      #cinematic-mobile-launcher { display:none; border:1px solid rgba(255,255,255,.18); border-radius:999px; background:rgba(255,255,255,.08); color:#fff; padding:7px 10px; cursor:pointer; font:11px/1 system-ui,sans-serif; white-space:nowrap; }
       html.cinematic-presentation .topbar,
       html.cinematic-presentation .controls,
       html.cinematic-presentation .dev-panel,
@@ -31,7 +31,7 @@
       html.cinematic-presentation #cinematic-mobile-launcher { display:none !important; }
       html.cinematic-presentation #cinematic-show-controls { display:block; }
       @media (max-width:760px) {
-        #cinematic-mobile-launcher { display:block; }
+        #cinematic-mobile-launcher { display:inline-flex; align-items:center; justify-content:center; }
         #cinematic-director.cinematic-mobile-collapsed { display:none !important; }
         #cinematic-director.cinematic-mobile-open { display:block !important; max-height:72vh; overflow:auto; }
       }
@@ -60,7 +60,8 @@
       panel.classList.toggle('cinematic-mobile-open', opening);
       launcher.textContent = opening ? 'Hide actor controls' : 'AI actor';
     });
-    document.body.appendChild(launcher);
+    const host = document.querySelector('.topbar .status-row') || document.querySelector('.topbar') || document.body;
+    host.appendChild(launcher);
   }
 
   async function init() {
