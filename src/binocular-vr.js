@@ -85,11 +85,9 @@
     if (window.__NovaXRControls?.toggleXR) {
       return window.__NovaXRControls.toggleXR(runtimeScene, xrButton);
     }
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] });
-    runtimeScene.isXR = true;
-    session.addEventListener('end', () => { runtimeScene.isXR = false; }, { once: true });
-    await runtimeScene.renderer.xr.setSession(session);
-    return { active: true, mode: 'immersive-vr' };
+    if (typeof runtimeScene.enterXR !== 'function') throw new Error('Headset VR entry is not available');
+    const mode = await runtimeScene.enterXR();
+    return { active: true, mode };
   }
 
   function updateLaunchButton() {
@@ -157,7 +155,7 @@
     const slider = overlay.querySelector('#nova-eye-separation');
     const value = overlay.querySelector('#nova-eye-separation-value');
     slider.addEventListener('input', () => {
-      state.eyeSeparation = Number(slider.value);
+      state.eyeSeparation = clamp(Number(slider.value) || DEFAULT_EYE_SEPARATION, 0.05, 0.075);
       value.textContent = `${Math.round(state.eyeSeparation * 1000)} mm`;
     });
     overlay.querySelector('#nova-close-binocular').addEventListener('click', stopPreview);

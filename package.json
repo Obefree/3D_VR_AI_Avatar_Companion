@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "npx serve . -l 4173",
-    "check": "node --check src/app.js && node --check src/scene.js && node --check src/embodiment.js && node --check src/humanoid-avatar.js && node --check src/character-profile.js && node --check src/scenario-core.js && node --check src/character-analyzer.js && node --check src/character-analyzer-ui.js && node --check src/xr-controls.js && node --check src/binocular-vr.js && node --check src/groq-auth.js && node --check api/chat.js && node --check tests/e2e-v2.mjs && node --check tests/xr-controls-smoke.mjs && node --check tests/reconnect-smoke.mjs && node --check tests/groq-auth-smoke.mjs && node --check tests/compound-actions-smoke.mjs && node --check tests/real-backend-smoke.mjs && node --check tests/public-url-smoke.mjs && node --check tests/humanoid-avatar-smoke.mjs && node --check tests/scenario-character-vr-smoke.mjs",
+    "check": "node --check src/app.js && node --check src/scene.js && node --check src/embodiment.js && node --check src/humanoid-avatar.js && node --check src/character-profile.js && node --check src/scenario-core.js && node --check src/character-analyzer.js && node --check src/character-analyzer-ui.js && node --check src/xr-controls.js && node --check src/binocular-vr.js && node --check src/groq-auth.js && node --check api/chat.js && node --check tests/e2e-v2.mjs && node --check tests/xr-controls-smoke.mjs && node --check tests/reconnect-smoke.mjs && node --check tests/groq-auth-smoke.mjs && node --check tests/compound-actions-smoke.mjs && node --check tests/real-backend-smoke.mjs && node --check tests/public-url-smoke.mjs && node --check tests/humanoid-avatar-smoke.mjs && node --check tests/scenario-character-vr-smoke.mjs && node --check tests/scenario-chain-smoke.mjs",
     "test:e2e": "node tests/e2e-v2.mjs && node tests/xr-controls-smoke.mjs",
+    "test:scenario-chain": "node tests/scenario-chain-smoke.mjs",
     "test:reconnect": "node tests/reconnect-smoke.mjs",
     "test:groq": "node tests/groq-auth-smoke.mjs",
     "test:compound": "node tests/compound-actions-smoke.mjs",
@@ -14,7 +15,7 @@
     "test:public": "node tests/public-url-smoke.mjs",
     "test:humanoid": "node tests/humanoid-avatar-smoke.mjs",
     "test:scenario-vr": "node tests/scenario-character-vr-smoke.mjs",
-    "verify": "npm run check && npm run test:scenario-vr && npm run test:e2e && npm run test:reconnect && npm run test:groq && npm run test:compound && npm run test:real && npm run test:public && npm run test:humanoid"
+    "verify": "npm run check && npm run test:scenario-vr && npm run test:scenario-chain && npm run test:e2e && npm run test:reconnect && npm run test:groq && npm run test:compound && npm run test:real && npm run test:public && npm run test:humanoid"
   },
   "dependencies": {
     "ai": "^6.0.0"
