@@ -32,6 +32,7 @@ try {
     targets: [...window.__novaScene.targets.keys()],
     humanoid: window.__novaHumanoid.getState(),
     presets: window.__novaVR180.presets,
+    baselines: window.__novaVR180.baselines,
   }));
 
   assert.ok(initial.targets.includes('actor_window'), 'cinematic window target missing at runtime');
@@ -44,6 +45,8 @@ try {
   assert.equal(initial.presets.quest.width, 5760);
   assert.equal(initial.presets.quest.height, 2880);
   assert.equal(initial.presets.quest.fps, 48);
+  assert.equal(initial.baselines.canon.meters, 0.060);
+  assert.equal(initial.baselines.natural.meters, 0.064);
 
   await page.evaluate(async () => {
     await window.__novaCinematicDirector.run(
@@ -56,10 +59,13 @@ try {
     avatar: { x: window.__novaScene.avatar.position.x, y: window.__novaScene.avatar.position.y, z: window.__novaScene.avatar.position.z },
     pose: window.__novaEmbodiment.getPose(),
     log: document.getElementById('cinematic-director-log')?.textContent || '',
+    baselineValue: document.getElementById('vr180-baseline')?.value || '',
     ui: {
       director: Boolean(document.getElementById('cinematic-director')),
       record: Boolean(document.getElementById('vr180-record-button')),
       preset: Boolean(document.getElementById('vr180-preset')),
+      baseline: Boolean(document.getElementById('vr180-baseline')),
+      audio: Boolean(document.getElementById('vr180-tab-audio')),
     },
   }));
 
@@ -68,6 +74,9 @@ try {
   assert.equal(finalState.ui.director, true, 'cinematic director UI missing');
   assert.equal(finalState.ui.record, true, 'VR180 record button missing');
   assert.equal(finalState.ui.preset, true, 'VR180 preset selector missing');
+  assert.equal(finalState.ui.baseline, true, 'VR180 baseline selector missing');
+  assert.equal(finalState.ui.audio, true, 'VR180 tab-audio control missing');
+  assert.equal(finalState.baselineValue, 'canon', 'Canon 60 mm baseline should be default');
   assert.match(finalState.log, /Scene complete/i, `scene did not complete: ${finalState.log}`);
   assert.equal(errors.length, 0, `browser errors: ${errors.join(' | ')}`);
 
