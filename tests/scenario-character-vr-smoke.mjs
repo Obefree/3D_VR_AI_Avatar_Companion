@@ -30,7 +30,7 @@ try {
   assert.ok(response && response.ok(), `public URL failed: ${response?.status()}`);
   await page.waitForFunction(() => window.__novaScene && window.__novaEmbodimentReady === true, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaHumanoidReady === true, null, { timeout: 35000 });
-  await page.waitForFunction(() => window.__novaCharacterProfile && window.__novaScenarioCore && window.__novaCharacterAnalyzer && window.__NovaBinocularVR, null, { timeout: 10000 });
+  await page.waitForFunction(() => window.__novaCharacterProfile && window.__novaScenarioCore && window.__novaCharacterAnalyzer && window.__novaCharacterAnalyzerUI && window.__NovaBinocularVR, null, { timeout: 10000 });
 
   const initial = await page.evaluate(() => ({
     humanoid: window.__novaHumanoid.getState(),
@@ -70,7 +70,7 @@ try {
   assert.equal(analyzedProfile.analysis?.relationship, 'direct scene partner: viewer');
   assert.ok(analyzedProfile.analysis?.movementVocabulary?.some((item) => item.name === 'wave'), 'analysis metadata missing movement vocabulary');
 
-  await page.click('#nova-analyze-character-local');
+  await page.evaluate(() => window.__novaCharacterAnalyzerUI.analyzeCurrentScenario(false));
   await page.waitForSelector('#nova-character-analysis.visible');
   const analysisText = await page.locator('#nova-character-analysis pre').textContent();
   assert.match(analysisText || '', /Model native clips:/, 'native animation capability list missing');
