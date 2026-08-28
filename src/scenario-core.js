@@ -111,7 +111,7 @@
     if (/кноп|button/.test(lower) && runtimeScene?.targets?.has('red_button')) return 'red_button';
     if (/фильтр|filter/.test(lower) && runtimeScene?.targets?.has('filter')) return 'filter';
     if (/устройств|device|аппарат/.test(lower) && runtimeScene?.targets?.has('device')) return 'device';
-    if (context.lastTarget && /\b(него|нему|ней|неё|это|этот|там|it|that|there)\b/i.test(lower)) return context.lastTarget;
+    if (context.lastTarget && /(^|[^\p{L}\p{N}_])(него|нему|ней|неё|это|этот|там|it|that|there)([^\p{L}\p{N}_]|$)/iu.test(lower)) return context.lastTarget;
     return null;
   }
 
@@ -120,6 +120,15 @@
     if (!action?.name || !ALL_ACTIONS.has(action.name)) return;
     const key = actionKey(action);
     if (!actions.some((item) => actionKey(item) === key)) actions.push(action);
+  }
+  function collapseConsecutive(actions) {
+    const output = [];
+    for (const action of actions) {
+      const prev = output[output.length - 1];
+      if (prev && actionKey(prev) === actionKey(action)) continue;
+      output.push(action);
+    }
+    return output;
   }
 
   function actionsForBeat(beat, runtimeScene, actorProfile, context) {
@@ -135,29 +144,31 @@
     const explicitViewer = /зрител|геро|пользовател|собесед|viewer|user|hero|camera|камер/.test(text);
     const viewerContext = explicitViewer || context.viewerActive;
     const looks = /смотр|гляд|look|notice|замеч|видит|sees/.test(text);
-    const approaches = /подход|приближ|ид[её]т к|walks? to|approach|comes? closer/.test(text);
+    const approaches = /подход|подойд|приближ|поближе|(^|[^\p{L}\p{N}_])ближе([^\p{L}\p{N}_]|$)|ид[её]т к|walks? to|approach|comes? closer|come closer|step closer|come here/iu.test(text);
     const waves = /машет|помах|wave|greet|приветствует/.test(text);
     const points = /показыва|указывает|point|gesture toward/.test(text);
     const turns = /поворач|turns?|разворач/.test(text);
     const stepsBack = /отход|назад|steps? back|moves? back/.test(text);
     const stepsLeft = /влево|налево|steps? left|moves? left/.test(text);
     const stepsRight = /вправо|направо|steps? right|moves? right/.test(text);
-    const pauses = /пауза|молчит|жд[её]т|pause|waits?|silence/.test(text);
+    const pauses = /пауз|молчит|жд[её]т|pause|waits?|silence/.test(text);
 
     if (explicitViewer) context.viewerActive = true;
     if (targetId) context.lastTarget = targetId;
 
-    if (viewerContext && (looks || turns || beat.dialogue.length || gazeEngagement > 0.75)) {
+    if (viewerContext && (looks || turns || beat.dialogue.length || (explicitViewer && gazeEngagement > 0.75))) {
       pushUnique(actions, { name: 'face_user', args: {} });
     }
     if (targetId && looks) pushUnique(actions, { name: 'look_at', args: { targetId } });
-    if (turns && viewerContext) pushUnique(actions, { name: 'face_user', args: {} });
-    else if (turns && !targetId) pushUnique(actions, { name: 'turn_body', args: { degrees: 45 } });
+    if (turns && !viewerContext && !targetId) pushUnique(actions, { name: 'turn_body', args: { degrees: 45 } });
 
+    // One destination only: a named scene object uses move_near, otherwise walk to the viewer.
     if (approaches) {
-      if (targetId) pushUnique(actions, { name: 'move_near', args: { targetId } });
-      else if (viewerContext) pushUnique(actions, { name: 'approach_user', args: { distance: socialDistance } });
-      else pushUnique(actions, { name: 'step', args: { direction: 'front', distance: 0.7 } });
+      if (targetId && !explicitViewer) {
+        pushUnique(actions, { name: 'move_near', args: { targetId } });
+      } else {
+        pushUnique(actions, { name: 'approach_user', args: { distance: socialDistance } });
+      }
     }
 
     if (waves || (/привет|hello|hi\b/.test(text) && gestureIntensity > 0.32 && (character.warmth ?? 0.7) > 0.5)) {
@@ -191,7 +202,7 @@
       ...beat,
       actions: actionsForBeat(beat, runtimeScene, actorProfile, context),
     }));
-    const actions = beats.flatMap((beat) => beat.actions);
+    const actions = collapseConsecutive(beats.flatMap((beat) => beat.actions));
     if (!actions.length) {
       actions.push({ name: 'face_user', args: {} });
       actions.push({ name: 'speak', args: { text: russian(script) ? 'Я поняла сцену. Дай мне более конкретное действие или реплику.' : 'I understand the scene. Give me a more specific action or line.' } });
@@ -213,19 +224,30 @@
     return output;
   }
 
+  const MOVER_ACTIONS = new Set(['approach_user', 'move_near', 'step']);
+
   function mergePlans(localPlan, aiActions) {
     if (!aiActions.length) return localPlan;
     const actions = [];
+    // Local character-aware beats stay the spine so AI extras cannot drop approach/wave/speech.
     for (const localAction of localPlan.actions) pushUnique(actions, localAction);
-    for (const aiAction of aiActions) pushUnique(actions, aiAction);
-    return { ...localPlan, source: 'ai+core', actions };
+    const hasLocalMover = actions.some((action) => MOVER_ACTIONS.has(action.name));
+    for (const aiAction of aiActions) {
+      if (aiAction.name === 'speak') continue;
+      if (hasLocalMover && MOVER_ACTIONS.has(aiAction.name)) continue;
+      pushUnique(actions, aiAction);
+    }
+    if (!actions.some((action) => action.name === 'face_user') && actions.some((action) => action.name === 'speak')) {
+      actions.unshift({ name: 'face_user', args: {} });
+    }
+    return { ...localPlan, source: 'ai+core', actions: collapseConsecutive(actions) };
   }
 
   async function aiCompile(script, localPlan) {
     const endpoint = window.__NOVA_AI_ENDPOINT;
     if (!endpoint) return localPlan;
     const runtimeScene = scene();
-    const actionVocabulary = [...SCENE_ACTIONS, ...EMBODIMENT_ACTIONS].join(', ');
+    const actionVocabulary = [...ALL_ACTIONS].join(', ');
     const message = [
       'SCENARIO DIRECTOR MODE. Plan embodied acting; do not chat about the task.',
       profilePrompt(),
@@ -259,10 +281,8 @@
 
   async function approachUser(args = {}) {
     const runtimeScene = scene();
-    const THREE = await import('three');
-    const viewer = typeof runtimeScene.getViewerWorldPosition === 'function'
-      ? runtimeScene.getViewerWorldPosition()
-      : runtimeScene.camera.getWorldPosition(new THREE.Vector3());
+    const viewer = runtimeScene?.getViewerWorldPosition?.();
+    if (!viewer || !runtimeScene?.avatar) return { ok: false, error: 'viewer_unavailable' };
     const start = runtimeScene.avatar.position.clone();
     const desiredDistance = clamp(args.distance ?? profile()?.movement?.personalDistanceMeters ?? 1.35, 0.8, 3.5);
     const flatTarget = viewer.clone();
@@ -318,19 +338,27 @@
 
   async function execute(action) {
     if (state.stopRequested) return { ok: false, error: 'stopped' };
-    const runtimeScene = scene();
     const name = action?.name;
     const args = action?.args || {};
     if (name === 'speak') return speakLine(args.text);
     if (name === 'wait') { await sleep(clamp(args.ms ?? 500, 80, 4000)); return { ok: true, action: 'wait' }; }
     if (name === 'approach_user') return approachUser(args);
+    if (typeof window.__NovaApp?.executeAction === 'function') {
+      return window.__NovaApp.executeAction(action);
+    }
+    const runtimeScene = scene();
     if (SCENE_ACTIONS.has(name)) return runtimeScene.executeTool(name, args);
-    if (EMBODIMENT_ACTIONS.has(name)) return embodiment().execute({ name, args });
+    if (EMBODIMENT_ACTIONS.has(name)) {
+      const body = embodiment();
+      if (!body?.execute) return { ok: false, error: 'embodiment_not_ready', action: name };
+      return body.execute({ name, args });
+    }
     return { ok: false, error: 'unsupported_action', action: name };
   }
 
   async function run(script, options = {}) {
     if (state.running) throw new Error('A scenario is already running');
+    if (window.__NovaApp?.isBusy?.()) throw new Error('Nova is already acting');
     state.running = true;
     state.stopRequested = false;
     setStatus('Analyzing character and scenario…');
@@ -455,7 +483,7 @@
   function closeUi() { document.getElementById('nova-scenario-modal')?.classList.remove('open'); }
 
   window.__novaScenarioCore = {
-    splitScenario, compile, run, stop, open: openUi, close: closeUi,
+    splitScenario, compile, mergePlans, run, stop, open: openUi, close: closeUi,
     getState: () => ({ running: state.running, source: state.lastSource, lastPlan: state.lastPlan }),
     actions: () => [...ALL_ACTIONS],
   };

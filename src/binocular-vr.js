@@ -77,19 +77,10 @@
 
   async function enterHeadsetVr() {
     const runtimeScene = state.scene || await waitForScene();
-    if (!navigator.xr) throw new Error('WebXR is not available in this browser');
-    const supported = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
-    if (!supported) throw new Error('Immersive VR headset was not detected');
     stopPreview();
     const xrButton = document.getElementById('xr-button');
-    if (window.__NovaXRControls?.toggleXR) {
-      return window.__NovaXRControls.toggleXR(runtimeScene, xrButton);
-    }
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] });
-    runtimeScene.isXR = true;
-    session.addEventListener('end', () => { runtimeScene.isXR = false; }, { once: true });
-    await runtimeScene.renderer.xr.setSession(session);
-    return { active: true, mode: 'immersive-vr' };
+    if (!window.__NovaXRControls?.toggleXR) throw new Error('XR controls are not ready');
+    return window.__NovaXRControls.toggleXR(runtimeScene, xrButton);
   }
 
   function updateLaunchButton() {
@@ -157,7 +148,7 @@
     const slider = overlay.querySelector('#nova-eye-separation');
     const value = overlay.querySelector('#nova-eye-separation-value');
     slider.addEventListener('input', () => {
-      state.eyeSeparation = Number(slider.value);
+      state.eyeSeparation = clamp(Number(slider.value) || DEFAULT_EYE_SEPARATION, 0.05, 0.075);
       value.textContent = `${Math.round(state.eyeSeparation * 1000)} mm`;
     });
     overlay.querySelector('#nova-close-binocular').addEventListener('click', stopPreview);
