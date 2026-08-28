@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 const SCENE_ACTIONS = new Set(['look_at', 'point_at', 'highlight', 'move_near', 'press_button', 'remove_filter', 'face_user']);
 const EMBODIMENT_ACTIONS = new Set(['raise_hand', 'lower_hand', 'wave', 'step', 'turn_body', 'neutral_pose', 'create_object', 'delete_object', 'move_object']);
+const LOCOMOTION_ACTIONS = new Set(['approach_user', 'walk_to', 'step', 'move_near']);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value)));
 
@@ -211,6 +212,11 @@ async function speak(text) {
   return { ok: true, action: 'speak', text: value };
 }
 
+async function waitForChatIdle() {
+  const started = performance.now();
+  while (window.__NovaApp?.isBusy?.() && performance.now() - started < 45000) await sleep(40);
+}
+
 async function execute(action) {
   const name = String(action?.name || '').trim();
   const args = action?.args && typeof action.args === 'object' ? action.args : {};
@@ -222,6 +228,9 @@ async function execute(action) {
   if (name === 'sit') return sitActor();
   if (name === 'stand') return standActor();
   if (name === 'pause') { await sleep(clamp(args.ms ?? 450, 80, 4000)); return { ok: true, action: 'pause' }; }
+  if (typeof window.__NovaApp?.executeAction === 'function') {
+    return window.__NovaApp.executeAction({ name, args });
+  }
   if (SCENE_ACTIONS.has(name)) return state.scene.executeTool(name, args);
   if (EMBODIMENT_ACTIONS.has(name)) return window.__novaEmbodiment.execute({ name, args });
   return { ok: false, error: 'cinematic_action_not_allowed', action: name };
@@ -251,30 +260,49 @@ function fallbackPlan(script) {
   return plan.slice(0, 16);
 }
 
+function actionKey(action) {
+  return `${action?.name || ''}:${JSON.stringify(action?.args || {})}`;
+}
+
+function collapseConsecutive(actions) {
+  const result = [];
+  for (const action of actions) {
+    const previous = result[result.length - 1];
+    if (previous && actionKey(previous) === actionKey(action)) continue;
+    result.push(action);
+  }
+  return result;
+}
+
 function normalizeActions(data) {
   const result = [];
   const seen = new Set();
   for (const item of [...(Array.isArray(data?.actions) ? data.actions : []), ...(Array.isArray(data?.extendedActions) ? data.extendedActions : [])]) {
     if (!item || typeof item.name !== 'string') continue;
     const action = { name: item.name, args: item.args && typeof item.args === 'object' ? { ...item.args } : {} };
-    const key = `${action.name}:${JSON.stringify(action.args)}`;
+    const key = actionKey(action);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(action);
   }
-  return result.slice(0, 14);
+  return collapseConsecutive(result).slice(0, 14);
 }
 
 function enrichPlan(script, actions) {
-  const result = [...actions];
+  const result = collapseConsecutive(actions);
   const lower = String(script).toLowerCase();
   const names = new Set(result.map((a) => a.name));
-  if (/подход|подойти|приближ|approach|comes closer/.test(lower) && !names.has('approach_user')) result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
-  if (/бер[её]т|возьм|pick.*up|takes the glass/.test(lower) && !names.has('pick_up')) result.push({ name: 'pick_up', args: { targetId: 'actor_glass' } });
+  const hasLocomotion = [...LOCOMOTION_ACTIONS].some((name) => names.has(name));
+  if (/подход|подойти|приближ|approach|comes closer/.test(lower) && !hasLocomotion) {
+    result.push({ name: 'approach_user', args: { distanceFromUser: 1.55 } });
+  }
+  if (/бер[её]т|возьм|pick.*up|takes the glass/.test(lower) && !names.has('pick_up')) {
+    result.push({ name: 'pick_up', args: { targetId: 'actor_glass' } });
+  }
   if (/садит|садится|sit/.test(lower) && !names.has('sit')) result.push({ name: 'sit', args: {} });
   const lines = dialogue(script);
   if (lines.length && !result.some((a) => a.name === 'speak')) for (const line of lines) result.push({ name: 'speak', args: { text: line } });
-  return result.slice(0, 16);
+  return collapseConsecutive(result).slice(0, 16);
 }
 
 async function compileAI(script) {
@@ -317,20 +345,22 @@ function label(action) {
 async function run(script, options = {}) {
   if (state.running) throw new Error('Scene is already running');
   await waitForRuntime();
+  await waitForChatIdle();
   state.running = true;
   const log = document.getElementById('cinematic-director-log');
   const list = document.getElementById('cinematic-action-list');
   try {
     const plan = await compile(script, options.preferAI !== false);
-    if (list) list.textContent = plan.actions.map(label).join('  ›  ');
-    for (let i = 0; i < plan.actions.length; i += 1) {
-      const action = plan.actions[i];
-      if (log) log.textContent = `${plan.source === 'ai' ? 'AI' : 'Fallback'} director · ${i + 1}/${plan.actions.length}: ${label(action)}`;
+    const actions = collapseConsecutive(plan.actions);
+    if (list) list.textContent = actions.map(label).join('  ›  ');
+    for (let i = 0; i < actions.length; i += 1) {
+      const action = actions[i];
+      if (log) log.textContent = `${plan.source === 'ai' ? 'AI' : 'Fallback'} director · ${i + 1}/${actions.length}: ${label(action)}`;
       await execute(action);
       await sleep(100);
     }
-    if (log) log.textContent = `Scene complete · ${plan.actions.length} actions · ${plan.source}`;
-    return { ok: true, ...plan };
+    if (log) log.textContent = `Scene complete · ${actions.length} actions · ${plan.source}`;
+    return { ok: true, source: plan.source, actions };
   } finally { state.running = false; }
 }
 
@@ -339,16 +369,34 @@ function styleUi() {
   const style = document.createElement('style');
   style.id = 'cinematic-director-style';
   style.textContent = `
-    .cinematic-director { position:fixed; left:18px; bottom:18px; z-index:16; width:min(540px,calc(100vw - 36px)); padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); color:#eef5ff; font:13px/1.35 system-ui,sans-serif; }
+    .cinematic-director { position:fixed; left:12px; top:46%; transform:translateY(-50%); z-index:28; width:auto; max-width:min(420px,calc(100vw - 24px)); padding:0; border:0; background:transparent; box-shadow:none; pointer-events:none; color:#eef5ff; font:13px/1.35 system-ui,sans-serif; }
+    .cinematic-director > * { pointer-events:auto; }
+    .cinematic-director .cinematic-toggle { border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:8px 12px; background:rgba(7,11,18,.86); color:#fff; cursor:pointer; backdrop-filter:blur(18px); box-shadow:0 10px 28px rgba(0,0,0,.28); }
+    .cinematic-director.expanded { top:120px; bottom:auto; transform:none; width:min(420px,calc(100vw - 36px)); max-height:min(52vh,calc(100dvh - 260px)); overflow:auto; padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(7,11,18,.86); backdrop-filter:blur(18px); box-shadow:0 18px 50px rgba(0,0,0,.34); }
+    .cinematic-director.expanded .cinematic-toggle { margin-bottom:8px; }
     .cinematic-director textarea { width:100%; min-height:90px; box-sizing:border-box; resize:vertical; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.25); color:#fff; padding:10px; font:inherit; }
     .cinematic-director .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
     .cinematic-director button,.cinematic-director select { border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 11px; background:#171d27; color:#fff; cursor:pointer; }
     .cinematic-director button.primary { background:rgba(70,145,255,.28); }
     #cinematic-director-log { margin-top:8px; color:#b9d5ff; }
     #cinematic-action-list { margin-top:5px; color:#8f9bad; max-height:42px; overflow:auto; font-size:11px; }
-    @media(max-width:760px){.cinematic-director{left:10px;bottom:10px;width:calc(100vw - 20px)}}
+    @media(max-width:760px){
+      .cinematic-director { left:10px; }
+      .cinematic-director.expanded { top:auto; bottom:10px; width:calc(100vw - 20px); max-height:46dvh; }
+    }
   `;
   document.head.appendChild(style);
+}
+
+function setDirectorExpanded(panel, expanded) {
+  const body = panel.querySelector('#cinematic-director-body');
+  const toggle = panel.querySelector('#cinematic-director-toggle');
+  panel.classList.toggle('expanded', expanded);
+  if (body) body.hidden = !expanded;
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    toggle.textContent = expanded ? 'Hide AI Actor' : 'AI Actor · VR180';
+  }
 }
 
 function buildUi() {
@@ -358,12 +406,19 @@ function buildUi() {
   panel.id = 'cinematic-director';
   panel.className = 'cinematic-director';
   panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;font-weight:700"><span>AI ACTOR · CINEMATIC VR</span><span style="opacity:.55">HUMANOID</span></div>
-    <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
-    <div class="row"><button id="cinematic-run-ai" class="primary" type="button">AI → Act</button><button id="cinematic-run-local" type="button">Local fallback</button></div>
-    <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
+    <button id="cinematic-director-toggle" class="cinematic-toggle" type="button" aria-expanded="false">AI Actor · VR180</button>
+    <div id="cinematic-director-body" hidden>
+      <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;font-weight:700"><span>AI ACTOR · CINEMATIC VR</span><span style="opacity:.55">HUMANOID</span></div>
+      <textarea id="cinematic-script">Девушка стоит у окна. Она замечает зрителя, поворачивается к нему, подходит ближе и машет рукой. Затем подходит к столу, показывает на стакан, берет его и говорит: «Привет. Я получила сценарий и могу отыграть его прямо в VR».</textarea>
+      <div class="row"><button id="cinematic-run-ai" class="primary" type="button">AI → Act</button><button id="cinematic-run-local" type="button">Local fallback</button></div>
+      <div id="cinematic-director-log">Director ready</div><div id="cinematic-action-list"></div>
+    </div>
   `;
   document.body.appendChild(panel);
+  setDirectorExpanded(panel, false);
+  panel.querySelector('#cinematic-director-toggle').addEventListener('click', () => {
+    setDirectorExpanded(panel, !panel.classList.contains('expanded'));
+  });
   const script = panel.querySelector('#cinematic-script');
   panel.querySelector('#cinematic-run-ai').addEventListener('click', async () => { try { await run(script.value, { preferAI: true }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
   panel.querySelector('#cinematic-run-local').addEventListener('click', async () => { try { await run(script.value, { preferAI: false }); } catch (error) { panel.querySelector('#cinematic-director-log').textContent = `Error: ${error?.message || error}`; } });
