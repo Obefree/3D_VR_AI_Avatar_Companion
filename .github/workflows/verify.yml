@@ -13,7 +13,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 24
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -52,3 +52,6 @@ jobs:
 
       - name: Anthropomorphic avatar public smoke
         run: npm run test:humanoid
+
+      - name: Scenario character and binocular VR smoke
+        run: npm run test:scenario-vr
