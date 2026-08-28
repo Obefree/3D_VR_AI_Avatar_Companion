@@ -1,5 +1,4 @@
 (() => {
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const clamp01 = (value) => Math.max(0, Math.min(1, Number(value)));
 
   function clean(value) {
@@ -7,6 +6,8 @@
   }
 
   function dialogueLines(script) {
+    const fromCore = window.__novaScenarioCore?.splitScenario?.(script)?.flatMap((beat) => beat.dialogue);
+    if (Array.isArray(fromCore) && fromCore.length) return fromCore;
     const result = [];
     const regex = /[«“"]([^»”"]{1,700})[»”"]/g;
     let match;
@@ -26,7 +27,7 @@
     const confident = count(lower, /уверен|спокойн|решител|смело|confident|calm|decisive|firm/g);
     const anxious = count(lower, /нерв|трев|боится|страх|неувер|anxious|nervous|afraid|hesitat/g);
     const playful = count(lower, /шут|игрив|подмиг|сме[её]т|playful|jok|teas|wink|laugh/g);
-    const restrained = count(lower, /сдержан|тихо|осторож|пауза|restrained|quiet|careful|measured/g);
+    const restrained = count(lower, /сдержан|тихо|осторож|пауз|restrained|quiet|careful|measured/g);
     const initiative = count(lower, /сама|первой|подходит|начинает|бер[её]т|предлагает|initiates|approaches|offers|takes/g);
     const reactive = count(lower, /отвечает|реагирует|жд[её]т|после того как|responds|reacts|waits/g);
 
@@ -88,12 +89,12 @@
     const vocabulary = [
       ['look', /смотр|гляд|замеч|look|watch|notice/g],
       ['turn', /поворач|разворач|turn/g],
-      ['approach', /подход|приближ|approach|closer/g],
+      ['approach', /подход|подойд|приближ|ближе|approach|closer/g],
       ['walk', /ид[её]т|шага|walk|step/g],
       ['wave', /машет|помах|wave/g],
       ['point', /показыва|указывает|point/g],
       ['interact', /бер[её]т|трога|нажима|открыва|закрыва|takes|touch|press|open|close/g],
-      ['pause', /пауза|замира|жд[её]т|pause|wait/g],
+      ['pause', /пауз|замира|жд[её]т|pause|wait/g],
       ['gesture', /жест|рук|gesture|hand/g],
     ];
     return vocabulary
@@ -267,7 +268,4 @@
   }
 
   window.__novaCharacterAnalyzer = { analyze, apply, localAnalyze, profilePatch, summary };
-
-  // Allow scenario-core to load first or later; this module has no boot-time dependency.
-  void wait(0);
 })();
