@@ -1,8 +1,77 @@
 import assert from 'node:assert/strict';
+import { access, readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { extname, normalize, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
-const PUBLIC_REF = process.env.PUBLIC_REF || process.env.GITHUB_SHA || 'feature/unified-scenario-character-vr';
-const PUBLIC_URL = `https://cdn.githubraw.com/Obefree/3D_VR_AI_Avatar_Companion/${PUBLIC_REF}/index.html`;
+const root = resolve(process.cwd());
+const mime = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+};
+
+function json(res, status, body) {
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  res.end(JSON.stringify(body));
+}
+
+const embodimentSrc = await readFile(resolve(root, 'src/embodiment.js'), 'utf8');
+const indexSrc = await readFile(resolve(root, 'index.html'), 'utf8');
+const scenarioSrc = await readFile(resolve(root, 'src/scenario-core.js'), 'utf8');
+const appSrc = await readFile(resolve(root, 'src/app.js'), 'utf8');
+const binocularSrc = await readFile(resolve(root, 'src/binocular-vr.js'), 'utf8');
+assert.equal(embodimentSrc.includes('window.fetch = async'), false, 'embodiment fetch interceptor is back and would replay actions in parallel with app.js');
+assert.equal(indexSrc.includes('__NOVA_PRIMARY_FETCH'), false, 'PRIMARY_FETCH paper-over is still present');
+assert.match(scenarioSrc, /EXCLUSIVE_ACTIONS/, 'scenario merge no longer de-duplicates parallel AI/local actions');
+assert.match(scenarioSrc, /__NovaApp\?\.executeAction/, 'scenario still bypasses the central app dispatcher');
+assert.match(appSrc, /executeAction,/, 'app.js does not export executeAction');
+assert.equal(binocularSrc.includes('requestSession'), false, 'binocular VR still opens a second WebXR session');
+await assert.rejects(access(resolve(root, 'tests/e2e.mjs')), /ENOENT/, 'unused near-duplicate tests/e2e.mjs is back');
+
+const server = createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname === '/api/chat') {
+      if (req.method === 'GET') {
+        return json(res, 200, { ok: true, provider: 'scenario-smoke', contract: 'semantic-actions-v1' });
+      }
+      if (req.method === 'POST') {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        void raw;
+        return json(res, 200, {
+          ok: true,
+          text: 'Понял.',
+          intent: 'acknowledge',
+          actions: [],
+          extendedActions: [],
+        });
+      }
+      return json(res, 405, { ok: false });
+    }
+    const relative = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
+    const safe = normalize(relative).replace(/^(\.\.(\/|\\|$))+/, '');
+    const file = resolve(root, safe);
+    if (!file.startsWith(root)) {
+      res.writeHead(403);
+      return res.end('forbidden');
+    }
+    const data = await readFile(file);
+    res.writeHead(200, { 'content-type': mime[extname(file)] || 'application/octet-stream' });
+    res.end(data);
+  } catch (error) {
+    res.writeHead(404);
+    res.end(String(error?.message || 'not found'));
+  }
+});
+
+await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+const port = server.address().port;
 
 let browser;
 try {
@@ -21,13 +90,22 @@ try {
 
   const page = await context.newPage();
   const pageErrors = [];
+  await page.route(/favicon\.ico|apple-touch-icon/i, (route) => route.fulfill({ status: 204, body: '' }));
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('console', (message) => {
-    if (message.type() === 'error') pageErrors.push(message.text());
+    if (message.type() !== 'error') return;
+    const text = message.text();
+    if (/Failed to load resource/.test(text) && /404/.test(text)) return;
+    pageErrors.push(text);
+  });
+  page.on('response', (response) => {
+    if (response.status() < 400) return;
+    const url = response.url();
+    if (/favicon\.ico|apple-touch-icon/i.test(url)) return;
+    pageErrors.push(`${response.status()} ${url}`);
   });
 
-  const response = await page.goto(PUBLIC_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  assert.ok(response && response.ok(), `public URL failed: ${response?.status()}`);
+  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForFunction(() => window.__novaScene && window.__novaEmbodimentReady === true, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaHumanoidReady === true, null, { timeout: 35000 });
   await page.waitForFunction(() => window.__novaCharacterProfile && window.__novaScenarioCore && window.__novaCharacterAnalyzer && window.__novaCharacterAnalyzerUI && window.__NovaBinocularVR, null, { timeout: 10000 });
@@ -37,6 +115,9 @@ try {
     profile: window.__novaCharacterProfile.get(),
     scenarioActions: window.__novaScenarioCore.actions(),
     binocular: window.__NovaBinocularVR.getState(),
+    fetchInterceptsEmbodiment: String(window.fetch).includes('executeExtended') && String(window.fetch).includes('extendedActions'),
+    lastExtended: window.__novaLastExtendedResults,
+    hasCentralExecute: typeof window.__NovaApp?.executeAction === 'function',
   }));
 
   assert.equal(initial.humanoid.ready, true);
@@ -48,6 +129,9 @@ try {
   assert.ok(initial.scenarioActions.includes('speak'), 'scenario speech action missing');
   assert.ok(initial.scenarioActions.includes('approach_user'), 'viewer-relative approach action missing');
   assert.equal(initial.binocular.eyeSeparation, 0.064);
+  assert.equal(initial.fetchInterceptsEmbodiment, false, 'window.fetch still executes embodiment actions in parallel');
+  assert.equal(initial.lastExtended, undefined, 'dead embodiment fetch side channel is still populated');
+  assert.equal(initial.hasCentralExecute, true, 'central executeAction is missing');
 
   await page.click('#nova-scenario-launch');
   await page.waitForSelector('#nova-scenario-modal.open');
@@ -78,11 +162,35 @@ try {
 
   const plan = await page.evaluate(async (value) => window.__novaScenarioCore.compile(value, { ai: false }), script);
   assert.ok(plan.beats.length >= 2, `too few beats: ${plan.beats.length}`);
+  assert.ok(plan.analysis?.traits?.warmth > 0.6, 'compile did not extract character before planning');
   assert.ok(plan.actions.some((action) => action.name === 'face_user'), 'face_user not planned');
   assert.ok(plan.actions.some((action) => action.name === 'approach_user'), 'approach_user not planned');
   assert.ok(plan.actions.some((action) => action.name === 'wave'), 'wave not planned');
   assert.ok(plan.actions.some((action) => action.name === 'speak' && /Привет\. Я здесь/.test(action.args?.text || '')), 'multi-sentence dialogue not preserved');
+  for (const name of ['wave', 'approach_user', 'wait']) {
+    const count = plan.actions.filter((action) => action.name === name).length;
+    assert.ok(count <= 1, `duplicate ${name} in local plan: ${count}`);
+  }
 
+  const merged = await page.evaluate(async (value) => window.__novaScenarioCore.compile(value, {
+    ai: false,
+    analyze: false,
+    aiActions: [
+      { name: 'wave', args: { side: 'right' } },
+      { name: 'approach_user', args: { distance: 2.8 } },
+      { name: 'speak', args: { text: 'Параллельный дубль' } },
+      { name: 'highlight', args: { targetId: 'device' } },
+    ],
+  }), script);
+  assert.equal(merged.actions.filter((action) => action.name === 'wave').length, 1, 'AI wave ran in parallel with local wave');
+  assert.equal(merged.actions.filter((action) => action.name === 'approach_user').length, 1, 'AI approach ran in parallel with local approach');
+  assert.equal(merged.actions.some((action) => action.args?.text === 'Параллельный дубль'), false, 'AI speak duplicated local dialogue');
+  assert.ok(merged.actions.some((action) => action.name === 'highlight' && action.args?.targetId === 'device'), 'non-conflicting AI action was dropped');
+
+  const imperative = await page.evaluate(async () => window.__novaScenarioCore.compile('Подойди ближе к зрителю и скажи: «Я здесь».', { ai: false }));
+  assert.ok(imperative.actions.some((action) => action.name === 'approach_user'), 'imperative подойди/ближе did not plan approach_user');
+
+  const beforeProfile = await page.evaluate(() => window.__novaCharacterProfile.get().character.warmth);
   const before = await page.evaluate(() => ({ x: window.__novaScene.avatar.position.x, z: window.__novaScene.avatar.position.z }));
   const result = await page.evaluate(async (value) => window.__novaScenarioCore.run(value, { ai: false }), script);
   const after = await page.evaluate(() => ({
@@ -90,11 +198,16 @@ try {
     z: window.__novaScene.avatar.position.z,
     humanoid: window.__novaHumanoid.getState(),
     status: document.getElementById('nova-scenario-status')?.textContent || '',
+    analysisVisible: document.getElementById('nova-character-analysis')?.classList.contains('visible'),
+    persistedWarmth: window.__novaCharacterProfile.get().character.warmth,
   }));
   assert.equal(result.ok, true, 'scenario execution failed');
+  assert.ok(result.plan?.analysis?.source, 'run() skipped character extraction before performance');
   assert.ok(Math.hypot(after.x - before.x, after.z - before.z) > 0.1, 'actor did not approach viewer');
   assert.equal(after.humanoid.ready, true, 'humanoid was lost during scenario');
   assert.match(after.status, /Scenario complete/);
+  assert.equal(after.analysisVisible, true, 'character analysis was not shown during performance');
+  assert.equal(after.persistedWarmth, beforeProfile, 'run() overwrote the saved character profile');
 
   await page.evaluate(() => window.__novaCharacterProfile.update({ character: { warmth: 0.81 }, movement: { personalDistanceMeters: 1.5 } }));
   const editedProfile = await page.evaluate(() => window.__novaCharacterProfile.get());
@@ -118,8 +231,9 @@ try {
 
   assert.equal(pageErrors.length, 0, `browser errors: ${pageErrors.join(' | ')}`);
   console.log('SCENARIO_CHARACTER_VR_SMOKE_PASS');
-  console.log(PUBLIC_URL);
+  console.log(`http://127.0.0.1:${port}/`);
   await context.close();
 } finally {
   await browser?.close();
+  server.close();
 }

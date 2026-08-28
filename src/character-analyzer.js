@@ -1,5 +1,4 @@
 (() => {
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const clamp01 = (value) => Math.max(0, Math.min(1, Number(value)));
 
   function clean(value) {
@@ -267,7 +266,4 @@
   }
 
   window.__novaCharacterAnalyzer = { analyze, apply, localAnalyze, profilePatch, summary };
-
-  // Allow scenario-core to load first or later; this module has no boot-time dependency.
-  void wait(0);
 })();

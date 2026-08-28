@@ -197,7 +197,7 @@
           model: MODEL_NAME,
           modelReady: true,
           bodyParts,
-          supportedEmbodiedActions: ['look_at','point_at','move_near','raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object'],
+          supportedEmbodiedActions: ['look_at','point_at','move_near','raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object','speak','wait','approach_user','face_user'],
         },
       };
     };
