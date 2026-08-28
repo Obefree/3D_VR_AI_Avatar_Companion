@@ -4,6 +4,10 @@ const PRESETS = {
   draft: { label: 'VR180 Draft · 4096×2048 · 30 fps', width: 4096, height: 2048, fps: 30, cube: 1024, bitrate: 24_000_000 },
   quest: { label: 'Quest HQ · 5760×2880 · 48 fps', width: 5760, height: 2880, fps: 48, cube: 1536, bitrate: 36_000_000 },
 };
+const BASELINES = {
+  canon: { label: 'Canon-style · 60 mm', meters: 0.060 },
+  natural: { label: 'Headset stereo · 64 mm', meters: 0.064 },
+};
 
 const state = { scene: null, recording: null };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,9 +21,11 @@ async function waitForScene(timeoutMs = 12000) {
   throw new Error('Nova scene did not become ready');
 }
 
-function chooseMimeType() {
+function chooseMimeType(withAudio = false) {
   if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = ['video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const candidates = withAudio
+    ? ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+    : ['video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
   return candidates.find((type) => MediaRecorder.isTypeSupported?.(type)) || '';
 }
 
@@ -45,7 +51,7 @@ function projectionMaterial(cubeTexture) {
   });
 }
 
-function buildRuntime(preset) {
+function buildRuntime(preset, baselineMeters) {
   const canvas = document.createElement('canvas');
   canvas.width = preset.width;
   canvas.height = preset.height;
@@ -82,7 +88,7 @@ function buildRuntime(preset) {
   const centerPosition = state.scene.camera.getWorldPosition(new THREE.Vector3());
   const centerQuaternion = state.scene.camera.getWorldQuaternion(new THREE.Quaternion());
   const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(centerQuaternion).normalize();
-  const halfIpd = 0.032;
+  const halfIpd = baselineMeters * 0.5;
   leftEye.position.copy(centerPosition).addScaledVector(rightVector, -halfIpd);
   rightEye.position.copy(centerPosition).addScaledVector(rightVector, halfIpd);
   leftEye.quaternion.copy(centerQuaternion);
@@ -132,7 +138,7 @@ function downloadBlob(blob, filename) {
 
 function extensionFor(mime) { return mime.startsWith('video/mp4') ? 'mp4' : 'webm'; }
 
-function metadata(preset, mime) {
+function metadata(preset, mime, options = {}) {
   return {
     schema: 'nova-vr180-export-v1',
     projection: 'equirectangular-180',
@@ -141,13 +147,16 @@ function metadata(preset, mime) {
     stereo: true,
     stereoLayout: 'left-right',
     eyeOrder: ['left', 'right'],
-    eyeSeparationMeters: 0.064,
+    eyeSeparationMeters: options.baselineMeters ?? 0.060,
+    stereoProfile: options.baselineKey || 'canon',
     width: preset.width,
     height: preset.height,
     frameRate: preset.fps,
     mimeType: mime,
+    tabAudioRequested: Boolean(options.tabAudioRequested),
+    tabAudioCaptured: Boolean(options.tabAudioCaptured),
     playerHint: 'Select VR180 / 3D / Side-by-Side (Left-Right) when the headset player does not auto-detect projection.',
-    productionHint: 'For final Quest delivery use HEVC/H.265 or AV1 at 48-60 fps and higher resolution when offline rendering is available.',
+    productionHint: 'For final Quest delivery use HEVC/H.265 or AV1 at 48-60 fps; Meta currently cites 7680x3840/60 as a realistic high-end LR SBS target.',
   };
 }
 
@@ -158,19 +167,47 @@ function setStatus(text, error = false) {
   el.style.color = error ? '#ffb0b0' : '#a9bad0';
 }
 
-async function startRecording(presetName = 'draft') {
+async function requestTabAudio(enabled) {
+  if (!enabled) return { stream: null, audioTracks: [] };
+  if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('Tab audio capture is not supported by this browser');
+  setStatus('Choose this browser tab and enable “Share tab audio”…');
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: true,
+    preferCurrentTab: true,
+    selfBrowserSurface: 'include',
+    surfaceSwitching: 'exclude',
+  });
+  return { stream, audioTracks: stream.getAudioTracks() };
+}
+
+async function startRecording(presetName = 'draft', options = {}) {
   if (state.recording) return false;
   if (!state.scene) state.scene = await waitForScene();
   if (!HTMLCanvasElement.prototype.captureStream || typeof MediaRecorder === 'undefined') throw new Error('Browser canvas recording is unavailable');
 
   const preset = PRESETS[presetName] || PRESETS.draft;
-  const mimeType = chooseMimeType();
-  if (!mimeType) throw new Error('No supported browser video encoder found');
+  const baselineKey = BASELINES[options.baselineKey] ? options.baselineKey : 'canon';
+  const baselineMeters = BASELINES[baselineKey].meters;
+  const tabAudioRequested = Boolean(options.includeTabAudio);
+  const tabCapture = await requestTabAudio(tabAudioRequested);
+  const tabAudioCaptured = tabCapture.audioTracks.length > 0;
+  if (tabAudioRequested && !tabAudioCaptured) setStatus('Tab shared, but no audio track was provided. Video will be silent.', true);
 
-  const runtime = buildRuntime(preset);
+  const mimeType = chooseMimeType(tabAudioCaptured);
+  if (!mimeType) {
+    for (const track of tabCapture.stream?.getTracks?.() || []) track.stop();
+    throw new Error('No supported browser video encoder found');
+  }
+
+  const runtime = buildRuntime(preset, baselineMeters);
   renderFrame(runtime);
-  const stream = runtime.canvas.captureStream(preset.fps);
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: preset.bitrate });
+  const canvasStream = runtime.canvas.captureStream(preset.fps);
+  const outputStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...tabCapture.audioTracks,
+  ]);
+  const recorder = new MediaRecorder(outputStream, { mimeType, videoBitsPerSecond: preset.bitrate });
   const chunks = [];
 
   const overlay = document.createElement('div');
@@ -179,7 +216,7 @@ async function startRecording(presetName = 'draft') {
   overlay.appendChild(runtime.canvas);
   const label = document.createElement('div');
   label.style.cssText = 'padding-top:7px;color:#fff;font:12px system-ui';
-  label.textContent = `● REC · ${preset.label} · VR180 3D SBS`;
+  label.textContent = `● REC · ${preset.label} · VR180 3D SBS · ${Math.round(baselineMeters * 1000)} mm${tabAudioCaptured ? ' · audio' : ''}`;
   overlay.appendChild(label);
   document.body.appendChild(overlay);
 
@@ -189,9 +226,10 @@ async function startRecording(presetName = 'draft') {
     const blob = new Blob(chunks, { type: mimeType });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const ext = extensionFor(mimeType);
-    downloadBlob(blob, `nova_ai_actor_${stamp}_VR180_3D_SBS.${ext}`);
-    downloadBlob(new Blob([JSON.stringify(metadata(preset, mimeType), null, 2)], { type: 'application/json' }), `nova_ai_actor_${stamp}_VR180_3D_SBS.json`);
-    setStatus(`Saved VR180 3D SBS · ${(blob.size / 1024 / 1024).toFixed(1)} MB · ${mimeType}`);
+    const prefix = `nova_ai_actor_${stamp}_VR180_3D_SBS`;
+    downloadBlob(blob, `${prefix}.${ext}`);
+    downloadBlob(new Blob([JSON.stringify(metadata(preset, mimeType, { baselineMeters, baselineKey, tabAudioRequested, tabAudioCaptured }), null, 2)], { type: 'application/json' }), `${prefix}.json`);
+    setStatus(`Saved VR180 3D SBS · ${(blob.size / 1024 / 1024).toFixed(1)} MB · ${mimeType}${tabAudioCaptured ? ' · audio included' : ''}`);
   };
 
   const loop = () => {
@@ -201,8 +239,8 @@ async function startRecording(presetName = 'draft') {
   };
 
   recorder.start(1000);
-  state.recording = { recorder, runtime, overlay, preset, mimeType, raf: requestAnimationFrame(loop) };
-  setStatus(`Recording ${preset.label} · LR stereo · 64 mm IPD`);
+  state.recording = { recorder, runtime, overlay, preset, mimeType, canvasStream, outputStream, tabCaptureStream: tabCapture.stream, baselineMeters, baselineKey, tabAudioCaptured, raf: requestAnimationFrame(loop) };
+  setStatus(`Recording ${preset.label} · LR stereo · ${Math.round(baselineMeters * 1000)} mm${tabAudioCaptured ? ' · tab audio' : ''}`);
   const button = document.getElementById('vr180-record-button');
   if (button) button.textContent = 'Stop VR180 recording';
   return true;
@@ -214,7 +252,9 @@ function stopRecording() {
   state.recording = null;
   cancelAnimationFrame(active.raf);
   active.recorder.stop();
-  for (const track of active.recorder.stream?.getTracks?.() || []) track.stop();
+  for (const track of active.canvasStream?.getTracks?.() || []) track.stop();
+  for (const track of active.outputStream?.getTracks?.() || []) track.stop();
+  for (const track of active.tabCaptureStream?.getTracks?.() || []) track.stop();
   active.overlay.remove();
   cleanup(active.runtime);
   const button = document.getElementById('vr180-record-button');
@@ -226,21 +266,41 @@ function addUi() {
   const panel = document.getElementById('cinematic-director');
   if (!panel || document.getElementById('vr180-record-button')) return false;
   const row = panel.querySelector('.row') || panel;
+
   const select = document.createElement('select');
   select.id = 'vr180-preset';
   for (const [key, preset] of Object.entries(PRESETS)) {
     const option = document.createElement('option'); option.value = key; option.textContent = preset.label; select.appendChild(option);
   }
   row.appendChild(select);
+
+  const baseline = document.createElement('select');
+  baseline.id = 'vr180-baseline';
+  for (const [key, profile] of Object.entries(BASELINES)) {
+    const option = document.createElement('option'); option.value = key; option.textContent = profile.label; baseline.appendChild(option);
+  }
+  row.appendChild(baseline);
+
+  const audioLabel = document.createElement('label');
+  audioLabel.style.cssText = 'display:flex;align-items:center;gap:5px;padding:7px 4px;color:#cbd5e2;font:11px system-ui';
+  audioLabel.innerHTML = '<input id="vr180-tab-audio" type="checkbox"> include tab voice';
+  row.appendChild(audioLabel);
+
   const button = document.createElement('button');
   button.id = 'vr180-record-button'; button.type = 'button'; button.textContent = 'Record VR180 for headset'; row.appendChild(button);
   const status = document.createElement('div');
   status.id = 'vr180-status'; status.style.cssText = 'margin-top:6px;color:#a9bad0;font:11px system-ui';
-  status.textContent = 'VR180: 180°×180° per eye · Left–Right SBS · 64 mm eye separation';
+  status.textContent = 'VR180: 180°×180° per eye · Left–Right SBS · Canon-style 60 mm default';
   panel.appendChild(status);
+
   button.addEventListener('click', async () => {
-    try { if (state.recording) stopRecording(); else await startRecording(select.value); }
-    catch (error) { console.error(error); setStatus(`VR180 error: ${error?.message || error}`, true); }
+    try {
+      if (state.recording) stopRecording();
+      else await startRecording(select.value, {
+        baselineKey: baseline.value,
+        includeTabAudio: Boolean(document.getElementById('vr180-tab-audio')?.checked),
+      });
+    } catch (error) { console.error(error); setStatus(`VR180 error: ${error?.message || error}`, true); }
   });
   return true;
 }
@@ -249,7 +309,7 @@ async function init() {
   try {
     state.scene = await waitForScene();
     for (let i = 0; i < 120; i += 1) { if (addUi()) break; await sleep(80); }
-    window.__novaVR180 = { startRecording, stopRecording, presets: PRESETS, get recording() { return Boolean(state.recording); } };
+    window.__novaVR180 = { startRecording, stopRecording, presets: PRESETS, baselines: BASELINES, get recording() { return Boolean(state.recording); } };
   } catch (error) { console.error('VR180 recorder init failed:', error); }
 }
 
