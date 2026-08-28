@@ -25,7 +25,7 @@ try {
   assert.ok(response && response.ok(), `public URL failed: ${response?.status()}`);
   await page.waitForFunction(() => window.__novaScene && window.__novaEmbodimentReady === true, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaHumanoidReady === true, null, { timeout: 35000 });
-  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true && window.__novaVR180, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true && window.__novaVR180 && window.__novaPresentation, null, { timeout: 20000 });
 
   const initial = await page.evaluate(() => ({
     avatar: { x: window.__novaScene.avatar.position.x, y: window.__novaScene.avatar.position.y, z: window.__novaScene.avatar.position.z },
@@ -33,6 +33,7 @@ try {
     humanoid: window.__novaHumanoid.getState(),
     presets: window.__novaVR180.presets,
     baselines: window.__novaVR180.baselines,
+    deviceVisible: window.__novaScene.device?.visible,
   }));
 
   assert.ok(initial.targets.includes('actor_window'), 'cinematic window target missing at runtime');
@@ -40,6 +41,7 @@ try {
   assert.ok(initial.targets.includes('actor_glass'), 'cinematic glass target missing at runtime');
   assert.equal(initial.humanoid.ready, true, 'humanoid not ready');
   assert.equal(initial.humanoid.modelVisible, true, 'humanoid model not visible');
+  assert.equal(initial.deviceVisible, false, 'legacy service device should be hidden in cinematic mode');
   assert.equal(initial.presets.draft.width, 4096);
   assert.equal(initial.presets.draft.height, 2048);
   assert.equal(initial.presets.quest.width, 5760);
@@ -55,6 +57,15 @@ try {
     );
   });
 
+  await page.evaluate(() => window.__novaPresentation.enable());
+  const present = await page.evaluate(() => ({
+    enabled: window.__novaPresentation.enabled,
+    classOnRoot: document.documentElement.classList.contains('cinematic-presentation'),
+  }));
+  assert.equal(present.enabled, true, 'presentation API did not enable');
+  assert.equal(present.classOnRoot, true, 'presentation CSS class missing');
+  await page.evaluate(() => window.__novaPresentation.disable());
+
   const finalState = await page.evaluate(() => ({
     avatar: { x: window.__novaScene.avatar.position.x, y: window.__novaScene.avatar.position.y, z: window.__novaScene.avatar.position.z },
     pose: window.__novaEmbodiment.getPose(),
@@ -66,6 +77,7 @@ try {
       preset: Boolean(document.getElementById('vr180-preset')),
       baseline: Boolean(document.getElementById('vr180-baseline')),
       audio: Boolean(document.getElementById('vr180-tab-audio')),
+      presentation: Boolean(document.getElementById('cinematic-present-toggle')),
     },
   }));
 
@@ -76,6 +88,7 @@ try {
   assert.equal(finalState.ui.preset, true, 'VR180 preset selector missing');
   assert.equal(finalState.ui.baseline, true, 'VR180 baseline selector missing');
   assert.equal(finalState.ui.audio, true, 'VR180 tab-audio control missing');
+  assert.equal(finalState.ui.presentation, true, 'presentation button missing');
   assert.equal(finalState.baselineValue, 'canon', 'Canon 60 mm baseline should be default');
   assert.match(finalState.log, /Scene complete/i, `scene did not complete: ${finalState.log}`);
   assert.equal(errors.length, 0, `browser errors: ${errors.join(' | ')}`);
