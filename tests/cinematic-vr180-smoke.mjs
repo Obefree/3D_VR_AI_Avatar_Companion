@@ -15,8 +15,11 @@ assert.match(director, /nova:cinematic-action/, 'cinematic action event missing'
 
 assert.match(vr180, /equirectangular-180/, 'VR180 projection metadata missing');
 assert.match(vr180, /stereoLayout: 'left-right'/, 'LR SBS stereo layout missing');
-assert.match(vr180, /eyeSeparationMeters: 0\.064/, '64 mm stereo baseline missing');
+assert.match(vr180, /canon:.*0\.060/s, 'Canon 60 mm stereo baseline missing');
+assert.match(vr180, /natural:.*0\.064/s, '64 mm headset stereo baseline missing');
 assert.match(vr180, /captureStream\(preset\.fps\)/, 'browser VR180 recording missing');
+assert.match(vr180, /getDisplayMedia/, 'optional tab audio capture missing');
+assert.match(vr180, /tabAudioCaptured/, 'audio capture metadata missing');
 assert.match(vr180, /4096.*2048.*30/s, '4K draft preset missing');
 assert.match(vr180, /5760.*2880.*48/s, 'Quest HQ preset missing');
 
@@ -24,4 +27,4 @@ assert.match(index, /src\/humanoid-avatar\.js/, 'humanoid main missing');
 assert.match(index, /src\/cinematic-director\.js/, 'cinematic director not loaded');
 assert.match(index, /src\/vr180-recorder\.js/, 'VR180 recorder not loaded');
 
-console.log('cinematic director + VR180 smoke: ok');
+console.log('cinematic director + VR180 + audio smoke: ok');
