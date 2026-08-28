@@ -12,6 +12,9 @@ assert.match(director, /async function pickUp/, 'prop pickup missing');
 assert.match(director, /actor_window/, 'cinematic window target missing');
 assert.match(director, /actor_glass/, 'cinematic prop target missing');
 assert.match(director, /nova:cinematic-action/, 'cinematic action event missing');
+assert.match(director, /__NovaApp\?\.executeAction/, 'director must reuse the chat action dispatcher');
+assert.match(director, /pointer-events:none/, 'director overlay must not steal canvas gestures');
+assert.match(director, /cinematic-director collapsed/, 'director must start collapsed');
 
 assert.match(vr180, /equirectangular-180/, 'VR180 projection metadata missing');
 assert.match(vr180, /stereoLayout: 'left-right'/, 'LR SBS stereo layout missing');
@@ -25,6 +28,8 @@ assert.match(vr180, /5760.*2880.*48/s, 'Quest HQ preset missing');
 
 assert.match(index, /src\/humanoid-avatar\.js/, 'humanoid main missing');
 assert.match(index, /src\/cinematic-director\.js/, 'cinematic director not loaded');
+assert.equal(index.includes('__NOVA_PRIMARY_FETCH'), false, 'stale PRIMARY_FETCH fetch restore is still loaded');
+assert.equal(fs.readFileSync(new URL('../src/embodiment.js', import.meta.url), 'utf8').includes('window.fetch ='), false, 'embodiment still wraps fetch beside app.js');
 assert.match(index, /src\/vr180-recorder\.js/, 'VR180 recorder not loaded');
 
 console.log('cinematic director + VR180 + audio smoke: ok');

@@ -266,9 +266,11 @@ function addUi() {
   const panel = document.getElementById('cinematic-director');
   if (!panel || document.getElementById('vr180-record-button')) return false;
   const row = panel.querySelector('.row') || panel;
+  const body = panel.querySelector('.cinematic-body') || panel;
 
   const select = document.createElement('select');
   select.id = 'vr180-preset';
+  select.className = 'cinematic-hit';
   for (const [key, preset] of Object.entries(PRESETS)) {
     const option = document.createElement('option'); option.value = key; option.textContent = preset.label; select.appendChild(option);
   }
@@ -276,22 +278,24 @@ function addUi() {
 
   const baseline = document.createElement('select');
   baseline.id = 'vr180-baseline';
+  baseline.className = 'cinematic-hit';
   for (const [key, profile] of Object.entries(BASELINES)) {
     const option = document.createElement('option'); option.value = key; option.textContent = profile.label; baseline.appendChild(option);
   }
   row.appendChild(baseline);
 
   const audioLabel = document.createElement('label');
+  audioLabel.className = 'cinematic-hit';
   audioLabel.style.cssText = 'display:flex;align-items:center;gap:5px;padding:7px 4px;color:#cbd5e2;font:11px system-ui';
   audioLabel.innerHTML = '<input id="vr180-tab-audio" type="checkbox"> include tab voice';
   row.appendChild(audioLabel);
 
   const button = document.createElement('button');
-  button.id = 'vr180-record-button'; button.type = 'button'; button.textContent = 'Record VR180 for headset'; row.appendChild(button);
+  button.id = 'vr180-record-button'; button.type = 'button'; button.className = 'cinematic-hit'; button.textContent = 'Record VR180 for headset'; row.appendChild(button);
   const status = document.createElement('div');
   status.id = 'vr180-status'; status.style.cssText = 'margin-top:6px;color:#a9bad0;font:11px system-ui';
   status.textContent = 'VR180: 180°×180° per eye · Left–Right SBS · Canon-style 60 mm default';
-  panel.appendChild(status);
+  body.appendChild(status);
 
   button.addEventListener('click', async () => {
     try {
