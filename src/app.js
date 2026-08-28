@@ -372,9 +372,17 @@
     return run;
   }
 
+  function scenarioRunning() {
+    return Boolean(window.__novaScenarioCore?.getState?.().running);
+  }
+
   async function sendPrompt(text, options = {}) {
     const value = String(text || '').trim();
     if (!value) return false;
+    if (scenarioRunning()) {
+      toast(isRussian() ? 'Сначала дождись окончания сценария.' : 'Wait for the scenario to finish.');
+      return false;
+    }
     if ($('text-input')) $('text-input').value = '';
     activeTurn = true;
     try {
@@ -396,6 +404,10 @@
   }
 
   async function runGuidedDemo() {
+    if (scenarioRunning()) {
+      toast(isRussian() ? 'Сначала дождись окончания сценария.' : 'Wait for the scenario to finish.');
+      return;
+    }
     await scene.executeTool('move_near', { targetId: 'device' });
     await scene.executeTool('look_at', { targetId: 'red_button' });
     await scene.executeTool('point_at', { targetId: 'red_button' });
@@ -415,12 +427,12 @@
   }
 
   function startRecognition() {
-    if (!voiceSession || !voiceRecognition || recognitionRunning || activeTurn || voiceTurnPending) return;
+    if (!voiceSession || !voiceRecognition || recognitionRunning || activeTurn || voiceTurnPending || scenarioRunning()) return;
     try { voiceRecognition.lang = locale(); voiceRecognition.start(); }
     catch (error) { if (!String(error?.message || '').toLowerCase().includes('already')) toast('Voice recognition failed.'); }
   }
   function maybeResumeVoice() {
-    if (!voiceSession || activeTurn || voiceTurnPending) return;
+    if (!voiceSession || activeTurn || voiceTurnPending || scenarioRunning()) return;
     setVoiceButton('Stop listening');
     setTimeout(startRecognition, 250);
   }
@@ -503,6 +515,8 @@
     send(text) { return queueInteraction(() => sendPrompt(text)); },
     connect: connectLive,
     reconnect() { return detectCloudAI(true); },
+    executeAction,
+    isBusy: () => activeTurn || scenarioRunning(),
     getConversation() { return conversation.map((turn) => ({ ...turn })); },
     getSceneContext() { return scene.getSceneContext?.(); },
     stopVoice: stopVoiceSession,

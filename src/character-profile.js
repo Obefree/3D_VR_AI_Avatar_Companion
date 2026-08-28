@@ -111,8 +111,7 @@
     return clone(profile);
   }
 
-  function promptContext() {
-    const p = profile;
+  function promptContextFrom(p = profile) {
     return [
       `CHARACTER: ${p.name} (${p.role}).`,
       `ARCHETYPE: ${p.archetype}.`,
@@ -123,6 +122,14 @@
       `MOVEMENT: baseTempo=${p.movement.baseTempo}; gestureIntensity=${p.movement.gestureIntensity}; gazeEngagement=${p.movement.gazeEngagement}; preferred personal distance=${p.movement.personalDistanceMeters}m; ${p.movement.habits.join(' | ')}`,
       `CONSTRAINTS: ${p.constraints.join(' | ')}`,
     ].join('\n');
+  }
+
+  function promptContext() {
+    return promptContextFrom(profile);
+  }
+
+  function preview(patch) {
+    return merge(profile, patch);
   }
 
   function ensureStyles() {
@@ -239,7 +246,9 @@
     update,
     replace,
     reset,
+    preview,
     promptContext,
+    promptContextFrom,
     open: openUi,
     close: closeUi,
     defaults: () => clone(DEFAULT_PROFILE),

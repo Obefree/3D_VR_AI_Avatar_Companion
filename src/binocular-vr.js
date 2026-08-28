@@ -85,11 +85,11 @@
     if (window.__NovaXRControls?.toggleXR) {
       return window.__NovaXRControls.toggleXR(runtimeScene, xrButton);
     }
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] });
-    runtimeScene.isXR = true;
-    session.addEventListener('end', () => { runtimeScene.isXR = false; }, { once: true });
-    await runtimeScene.renderer.xr.setSession(session);
-    return { active: true, mode: 'immersive-vr' };
+    if (typeof runtimeScene.enterXR === 'function') {
+      const mode = await runtimeScene.enterXR();
+      return { active: true, mode };
+    }
+    throw new Error('XR controls are not ready');
   }
 
   function updateLaunchButton() {

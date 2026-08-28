@@ -125,7 +125,8 @@ export class SpatialScene {
     const darkMat = this.#material(0x09131d, { metalness: 0.5, roughness: 0.35 });
 
     this.body = new THREE.Group();
-    this.body.position.y = 0.87;
+    this.bodyBaseY = 0.87;
+    this.body.position.y = this.bodyBaseY;
     this.avatar.add(this.body);
 
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.38, 8, 20), bodyMat);
@@ -405,13 +406,15 @@ export class SpatialScene {
     const delta = Math.min(this.clock.getDelta(), 0.05);
     if (!this.isXR) this.controls.update();
 
-    this.body.position.y = 0.87 + Math.sin(time * 0.0018) * 0.025;
-    if (this.avatarState === 'speaking') {
-      this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
-      this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
-      this.rightEye.scale.copy(this.leftEye.scale);
-    } else {
-      this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+    if (this.body.visible) {
+      this.body.position.y = (this.bodyBaseY ?? 0.87) + Math.sin(time * 0.0018) * 0.025;
+      if (this.avatarState === 'speaking') {
+        this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
+        this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
+        this.rightEye.scale.copy(this.leftEye.scale);
+      } else {
+        this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+      }
     }
 
     this.#updateHead(delta);

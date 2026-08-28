@@ -82,8 +82,17 @@
     analyze.id = 'nova-analyze-character';
     analyze.type = 'button';
     analyze.textContent = 'Analyze character';
-    if (characterButton) buttons.insertBefore(analyze, characterButton);
-    else buttons.appendChild(analyze);
+    const analyzeLocal = document.createElement('button');
+    analyzeLocal.id = 'nova-analyze-character-local';
+    analyzeLocal.type = 'button';
+    analyzeLocal.textContent = 'Analyze locally';
+    if (characterButton) {
+      buttons.insertBefore(analyze, characterButton);
+      buttons.insertBefore(analyzeLocal, characterButton);
+    } else {
+      buttons.appendChild(analyze);
+      buttons.appendChild(analyzeLocal);
+    }
 
     const box = document.createElement('section');
     box.id = 'nova-character-analysis';
@@ -99,7 +108,6 @@
       <pre></pre>
       <div class="nova-character-analysis-actions">
         <button id="nova-apply-character-analysis" type="button" disabled>Apply to Nova</button>
-        <button id="nova-analyze-character-local" type="button">Analyze locally</button>
       </div>`;
     const status = modal.querySelector('#nova-scenario-status');
     status?.parentNode?.insertBefore(box, status.nextSibling);
@@ -111,12 +119,11 @@
       finally { analyze.disabled = false; }
     });
 
-    box.querySelector('#nova-analyze-character-local').addEventListener('click', async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
+    analyzeLocal.addEventListener('click', async () => {
+      analyzeLocal.disabled = true;
       try { await analyzeCurrentScenario(false); }
       catch (error) { setScenarioStatus(`Character analysis error: ${error?.message || error}`); }
-      finally { button.disabled = false; }
+      finally { analyzeLocal.disabled = false; }
     });
 
     box.querySelector('#nova-apply-character-analysis').addEventListener('click', (event) => {
@@ -139,6 +146,6 @@
     }, 50);
   }
 
-  window.__novaCharacterAnalyzerUI = { install, analyzeCurrentScenario, getLastAnalysis: () => lastAnalysis };
+  window.__novaCharacterAnalyzerUI = { install, analyzeCurrentScenario, show: render, getLastAnalysis: () => lastAnalysis };
   window.addEventListener('DOMContentLoaded', boot);
 })();
