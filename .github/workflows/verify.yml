@@ -35,6 +35,9 @@ jobs:
       - name: Scenario character and binocular VR smoke
         run: npm run test:scenario-vr
 
+      - name: Scenario function-chain smoke
+        run: npm run test:scenario-chain
+
       - name: Deterministic mobile end-to-end verification
         run: npm run test:e2e
 
