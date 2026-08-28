@@ -1,61 +1,118 @@
 # Spatial AI Companion — Nova
 
-Nova is a browser-first **anthropomorphic embodied AI companion** for games, VR, mixed reality and spatial interfaces.
+Nova is a browser-first **anthropomorphic embodied AI actor/companion** for games, cinematic VR, mixed reality and spatial interfaces.
 
-She is not a chat box placed next to a 3D scene. The language model receives semantic scene/body context and can answer the user while invoking an allowlisted set of physical actions in the same world.
+She is not a chat box next to a 3D scene. The AI receives semantic scene/body context and can answer the user while invoking an allowlisted set of physical actions in the same 3D world.
 
-## Canonical live demo
+## Canonical live site
 
-Use only this current `main` build:
+Use this single current `main` build:
 
 ```text
 https://raw.githack.com/Obefree/3D_VR_AI_Avatar_Companion/main/index.html
 ```
 
-Older commit-pinned URLs are historical snapshots and are not the demo URL.
+This is the URL to keep sharing while the demo is under active development. RawGitHack's branch URL refreshes after new pushes to `main`, so we do not need a new site address for every version.
+
+For a frozen management/demo snapshot, use the same URL format with a specific commit hash instead of `main`.
+
+## What the current site contains
+
+### AI actor mode
+
+A screenplay or natural-language scene can be compiled into an ordered performance for Nova. The cinematic layer currently supports:
+
+- noticing/facing the viewer;
+- walking closer to the viewer;
+- walking to scene targets;
+- looking and pointing;
+- waving and hand gestures;
+- picking up a prop;
+- sitting/standing demo behavior;
+- spoken dialogue;
+- cinematic stage targets: window, table, chair and glass.
+
+The language model acts as a **director/planner**. Movement itself is executed by deterministic animation/embodiment code instead of asking the LLM to generate skeletal poses frame by frame.
+
+### Actor polish
+
+A post-animation polish layer makes the cinematic actor turn naturally toward the direction of movement, scene targets and the viewer. It also uses blink/smile morph targets when the loaded humanoid provides them, while remaining safe on models without facial morphs.
+
+### Presentation mode
+
+`Presentation mode` hides the development UI and old service-demo clutter so the same browser build can be shown as a cleaner cinematic scene.
+
+### WebXR
+
+On supported browsers/headsets the site exposes **Enter XR**. The renderer uses WebXR `local-floor`, and the same avatar root, scene coordinates and AI actions are used in desktop and headset modes.
+
+### VR180 3D video for headsets
+
+The site can also record a stereoscopic VR180 output rather than only run interactively.
+
+Current presets:
+
+- **VR180 Draft** — 4096×2048 / 30 fps;
+- **Quest HQ** — 5760×2880 / 48 fps.
+
+The recorder outputs cropped-equirectangular **VR180 3D Side-by-Side, Left/Right**. The default stereo baseline is **60 mm** to approximate Canon RF5.2mm Dual Fisheye geometry; a **64 mm** natural/headset option is also available.
+
+Optional current-tab audio capture lets browser speech be included in the recording after the user grants tab-audio capture permission.
+
+See `VR180_HEADSET.md` for playback/export notes.
 
 ## Current stack
 
-- Three.js + WebXR (`local-floor`) for browser/VR rendering.
+- Three.js + WebXR (`local-floor`).
 - CC0 Quaternius **Animated Woman** GLB as Nova's visible humanoid body.
+- AnimationMixer locomotion/idle clips where available.
 - Skeleton-driven gaze, pointing, hand raise/wave and conversational gestures.
-- AnimationMixer clips for idle/walking where available.
-- Browser SpeechRecognition for voice input and SpeechSynthesis for spoken replies.
+- Actor-facing and optional facial-morph polish layer.
+- Browser SpeechRecognition and SpeechSynthesis.
 - Groq server-side AI through a Supabase Edge Function; no API key is exposed to the browser.
-- Fast deterministic command engine for simple scene actions, with Groq used for conversation and complex multi-action interpretation.
-- Editable semantic 3D world and an allowlisted tool router.
+- Deterministic fast path for simple commands and Groq for conversation/compound interpretation.
+- Editable semantic 3D world with an allowlisted action router.
+- Browser VR180 stereo recorder.
 
-## What Nova can do now
+## Core architecture
 
-### Conversation
+```text
+Scene script / user speech / text
+              │
+              ▼
+        AI director / Nova
+              │
+      ordered safe actions
+              │
+              ▼
+       embodiment runtime
+       │       │       │
+       ▼       ▼       ▼
+ locomotion  gaze/IK  objects
+       │       │       │
+       └───────┼───────┘
+               ▼
+        humanoid performance
+          │             │
+          ▼             ▼
+       WebXR         VR180 SBS
+    interactive      video export
+```
 
-- answer free-form questions;
-- keep short conversational context;
-- respond in the user's language;
-- speak replies aloud in browsers with SpeechSynthesis.
+## Regular companion abilities
 
-### Embodiment
+Nova can also:
 
-- look at the user or a scene target;
-- point at a target;
-- raise/lower either hand;
-- wave;
-- turn her body;
-- step in a direction by a requested distance;
-- move near an object;
-- return to a neutral pose.
-
-### Scene interaction
-
-- identify known objects and spatial relationships;
-- highlight objects;
-- press the service-device reset button;
-- remove the service filter after reset;
+- answer free-form questions and speak replies;
+- look at the user or scene targets;
+- raise/lower either hand and wave;
+- turn and step by requested distances;
+- identify spatial relationships;
 - create box/sphere/cylinder/cone objects;
-- move created objects;
-- delete created objects.
+- move/delete created objects;
+- interact with the original service-demo button/filter workflow.
 
-The AI never receives arbitrary JavaScript references. It can request only actions exposed in the explicit tool schema, and the browser validates/executes them locally.
+AI actions are allowlisted and validated locally. The model does not receive arbitrary JavaScript execution access.
 
 ## Humanoid model
 
@@ -66,37 +123,7 @@ Nova currently uses the Quaternius Animated Woman model from the Ultimate Modula
 - Public Domain / CC0;
 - permitted for personal and commercial projects.
 
-The runtime loads the model, scales it to human height, resolves humanoid bones and maps Nova's semantic body state onto the skeleton. If the external model cannot load, the old procedural body remains only as a resilience fallback so scene logic still works.
-
-## Architecture
-
-```text
-User text / microphone
-        │
-        ▼
-Browser Nova runtime ─────────────── scene + body context
-        │                                  │
-        ▼                                  ▼
-Supabase Groq proxy                  semantic 3D world
-        │                                  │
-        ▼                                  │
-Groq conversation / tool calls             │
-        │                                  │
-        └──────────────► allowlisted tool router
-                                   │
-             ┌─────────────────────┼─────────────────────┐
-             ▼                     ▼                     ▼
-       humanoid body          scene objects       service device
-       gaze/gesture/move      create/move/delete  button/filter
-```
-
-Simple known commands take the deterministic fast path so they do not wait for an LLM round trip. Compound or free-form requests use Groq and can return multiple physical actions in one turn.
-
-## WebXR
-
-On supported browsers/headsets the app exposes an **Enter XR** control. The renderer is WebXR-enabled and uses a `local-floor` reference space so Nova and scene objects retain meter-scale spatial positions.
-
-The same `avatar` root is used in desktop and XR modes, so movement, turning, semantic body positions and tool actions are shared instead of having a separate VR-only character implementation.
+The runtime scales it to human height, resolves humanoid bones and maps Nova's semantic state onto the skeleton. If the external model fails to load, the procedural body remains as a resilience fallback so scene logic still works.
 
 ## Run locally
 
@@ -109,18 +136,23 @@ Open `http://localhost:4173`.
 
 ## Verification
 
-The repository CI checks:
+CI checks:
 
 - JavaScript syntax;
 - deterministic mobile scene/action flows;
+- touch/XR controls;
 - reconnect behavior;
 - Groq connection state;
 - compound multi-tool execution;
 - real Supabase backend behavior;
-- public CDN build behavior;
-- real Quaternius GLB loading, skeleton resolution and humanoid hand/root movement.
+- immutable public CDN behavior;
+- real Quaternius GLB loading and skeleton movement;
+- cinematic director execution;
+- Presentation Mode;
+- VR180 presets/stereo baselines;
+- actor-polish runtime and natural facing behavior.
 
-Run the full local verification set with:
+Run the full verification set with:
 
 ```bash
 npm run verify
@@ -128,7 +160,7 @@ npm run verify
 
 ## Security
 
-- The server Groq key is not embedded in frontend JavaScript.
+- Groq credentials are not embedded in frontend JavaScript.
 - AI actions are allowlisted and arguments are sanitized.
-- Built-in service objects cannot be deleted through dynamic-object tools.
+- Built-in protected objects cannot be deleted through dynamic-object tools.
 - Movement and object sizes are clamped to scene bounds.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
-const PUBLIC_REF = process.env.PUBLIC_REF || process.env.GITHUB_SHA || 'feature/ai-director-vr180-headset';
+const PUBLIC_REF = process.env.PUBLIC_REF || process.env.GITHUB_SHA || 'feature/live-site-actor-polish';
 const PUBLIC_URL = `https://cdn.githubraw.com/Obefree/3D_VR_AI_Avatar_Companion/${PUBLIC_REF}/index.html`;
 
 let browser;
@@ -25,12 +25,14 @@ try {
   assert.ok(response && response.ok(), `public URL failed: ${response?.status()}`);
   await page.waitForFunction(() => window.__novaScene && window.__novaEmbodimentReady === true, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__novaHumanoidReady === true, null, { timeout: 35000 });
-  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true && window.__novaVR180 && window.__novaPresentation, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.__novaCinematicDirectorReady === true && window.__novaVR180 && window.__novaPresentation && window.__novaActorPolish?.getState?.().ready, null, { timeout: 20000 });
 
   const initial = await page.evaluate(() => ({
     avatar: { x: window.__novaScene.avatar.position.x, y: window.__novaScene.avatar.position.y, z: window.__novaScene.avatar.position.z },
+    yaw: window.__novaScene.avatar.rotation.y,
     targets: [...window.__novaScene.targets.keys()],
     humanoid: window.__novaHumanoid.getState(),
+    actorPolish: window.__novaActorPolish.getState(),
     presets: window.__novaVR180.presets,
     baselines: window.__novaVR180.baselines,
     deviceVisible: window.__novaScene.device?.visible,
@@ -41,6 +43,7 @@ try {
   assert.ok(initial.targets.includes('actor_glass'), 'cinematic glass target missing at runtime');
   assert.equal(initial.humanoid.ready, true, 'humanoid not ready');
   assert.equal(initial.humanoid.modelVisible, true, 'humanoid model not visible');
+  assert.equal(initial.actorPolish.ready, true, 'actor polish runtime not ready');
   assert.equal(initial.deviceVisible, false, 'legacy service device should be hidden in cinematic mode');
   assert.equal(initial.presets.draft.width, 4096);
   assert.equal(initial.presets.draft.height, 2048);
@@ -49,6 +52,14 @@ try {
   assert.equal(initial.presets.quest.fps, 48);
   assert.equal(initial.baselines.canon.meters, 0.060);
   assert.equal(initial.baselines.natural.meters, 0.064);
+
+  await page.evaluate(() => {
+    const avatar = window.__novaScene.avatar.position;
+    window.__novaActorPolish.aimAt({ x: avatar.x + 1, y: avatar.y, z: avatar.z }, 1400);
+  });
+  await page.waitForTimeout(650);
+  const polishedYaw = await page.evaluate(() => window.__novaScene.avatar.rotation.y);
+  assert.ok(Math.abs(polishedYaw - initial.yaw) > 0.08, `actor polish did not rotate Nova toward a target: ${initial.yaw} -> ${polishedYaw}`);
 
   await page.evaluate(async () => {
     await window.__novaCinematicDirector.run(
@@ -69,6 +80,7 @@ try {
   const finalState = await page.evaluate(() => ({
     avatar: { x: window.__novaScene.avatar.position.x, y: window.__novaScene.avatar.position.y, z: window.__novaScene.avatar.position.z },
     pose: window.__novaEmbodiment.getPose(),
+    actorPolish: window.__novaActorPolish.getState(),
     log: document.getElementById('cinematic-director-log')?.textContent || '',
     baselineValue: document.getElementById('vr180-baseline')?.value || '',
     ui: {
@@ -83,6 +95,8 @@ try {
 
   const travel = Math.hypot(finalState.avatar.x - initial.avatar.x, finalState.avatar.z - initial.avatar.z);
   assert.ok(travel > 0.2, `cinematic scenario did not move avatar enough: ${travel}`);
+  assert.equal(finalState.actorPolish.ready, true, 'actor polish stopped during scenario');
+  assert.ok(finalState.actorPolish.lastAction, 'actor polish did not observe cinematic actions');
   assert.equal(finalState.ui.director, true, 'cinematic director UI missing');
   assert.equal(finalState.ui.record, true, 'VR180 record button missing');
   assert.equal(finalState.ui.preset, true, 'VR180 preset selector missing');
