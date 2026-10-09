@@ -40,7 +40,7 @@ A post-animation polish layer makes the cinematic actor turn naturally toward th
 
 ### Presentation mode
 
-`Presentation mode` hides the development UI and old service-demo clutter so the same browser build can be shown as a cleaner cinematic scene.
+`Presentation mode` hides the director chrome for a clean shot. The default product UI is already the cinematic path: script panel, WebXR, VR180. The old chat/service demo is only at `/?service=1`.
 
 ### WebXR
 
@@ -71,8 +71,8 @@ See `VR180_HEADSET.md` for playback/export notes.
 - Browser SpeechRecognition and SpeechSynthesis.
 - Groq server-side AI through a Supabase Edge Function; no API key is exposed in the public browser build.
 - Deterministic fast path for simple commands and Groq for conversation/compound interpretation.
-- Optional local `/api/chat` adapter for Vercel AI Gateway development. It is not the public demo backend.
-- Editable semantic 3D world with an allowlisted action router.
+- Local director: `npm run dev` → `http://127.0.0.1:4173` → Ollama (`qwen2.5:7b` by default).
+- Public githack demo still uses Groq via Supabase vault.
 - Browser VR180 stereo recorder.
 
 ## Core architecture
@@ -102,18 +102,13 @@ Scene script / user speech / text
 
 ## Regular companion abilities
 
-Nova can also:
+The cinematic default does **not** run the old chat-and-service-box demo. That path is `/?service=1` for legacy e2e only.
 
-- answer free-form questions and speak replies;
-- look at the user or scene targets;
-- raise/lower either hand and wave;
-- turn and step by requested distances;
-- identify spatial relationships;
-- create box/sphere/cylinder/cone objects;
-- move/delete created objects;
-- interact with the original service-demo button/filter workflow.
+On the product path Nova:
 
-AI actions are allowlisted and validated locally. The model does not receive arbitrary JavaScript execution access.
+- compiles a screenplay into look/face/approach/wave/walk/point/pick-up/speak;
+- performs it on the humanoid in the room;
+- can enter WebXR and record VR180 SBS (Canon-style 60 mm).
 
 ## Humanoid model
 
@@ -130,20 +125,20 @@ The runtime scales it to human height, resolves humanoid bones and maps Nova's s
 
 ```bash
 npm install
-npx serve . -l 4173
+npm run dev
 ```
 
-Open `http://localhost:4173`.
+Open `http://127.0.0.1:4173`.
 
-Localhost uses `./api/chat` by default so local test prompts do not leave the machine unless the serverless adapter is explicitly configured. The public build uses the server-managed Supabase/Groq vault endpoint. Add `?ai=vault` locally to exercise the public backend, or `?ai=user-groq` to test the legacy browser-key Groq proxy.
+Localhost talks to **Ollama** through `/api/chat` (default model `qwen2.5:7b`). Install Ollama, then `ollama pull qwen2.5:7b`. The public build still uses the server-managed Supabase/Groq vault. Add `?ai=vault` locally to exercise the public backend, or `?ai=user-groq` for the legacy browser-key Groq proxy.
 
 ## AI transport
 
 Runtime AI endpoint selection lives in `src/runtime-config.js`.
 
 - public/default site: Supabase Edge Function `nova-groq-vault`;
-- localhost/default: `./api/chat`;
-- optional local Vercel AI Gateway adapter: `api/chat.js`, model from `NOVA_AI_GATEWAY_MODEL` or `openai/gpt-oss-20b`;
+- localhost/default: `./api/chat` on the local Node server (`npm run dev`), backed by Ollama (`qwen2.5:7b` unless `NOVA_OLLAMA_MODEL` is set);
+- optional Vercel AI Gateway adapter: only when `AI_GATEWAY_API_KEY` / Vercel env is present; model from `NOVA_AI_GATEWAY_MODEL` or `openai/gpt-oss-20b`;
 - legacy user-key Groq proxy: only when explicitly requested with `?ai=user-groq`.
 
 The current public health endpoint reports the active upstream provider at runtime. Do not infer the live model from `api/chat.js`, because that file is only the optional local adapter.

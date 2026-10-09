@@ -1,5 +1,5 @@
 (() => {
-  const MAX_ORBIT_DISTANCE = 14;
+  const MAX_ORBIT_DISTANCE = 28;
   const MIN_CAMERA_FAR = 50;
 
   function showToast(text, ms = 2600) {

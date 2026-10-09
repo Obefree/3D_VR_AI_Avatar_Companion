@@ -10,7 +10,7 @@
       scene.environmentGroup.children.forEach((child, index) => { if (index > 0) child.visible = false; });
     }
     for (const [id, target] of scene.targets || []) {
-      if (String(id).startsWith('user_') && target?.mesh) target.mesh.visible = false;
+      if (['device', 'red_button', 'filter'].includes(String(id)) && target?.mesh) target.mesh.visible = false;
     }
   }
 
@@ -71,13 +71,13 @@
       const panel = document.getElementById('cinematic-director');
       if (scene?.scene && panel) {
         hideLegacySceneProps(scene);
-        const row = panel.querySelector('.row') || panel;
+        const extras = document.getElementById('cinematic-extras') || panel;
         const button = document.createElement('button');
         button.id = 'cinematic-present-toggle';
         button.type = 'button';
         button.textContent = 'Presentation mode';
         button.addEventListener('click', () => setPresentation(true));
-        row.appendChild(button);
+        extras.appendChild(button);
 
         const restore = document.createElement('button');
         restore.id = 'cinematic-show-controls';

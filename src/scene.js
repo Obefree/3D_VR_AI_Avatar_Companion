@@ -2,6 +2,25 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const TARGET_PRIORITY = ['red_button', 'filter', 'device'];
+const WALK_LIMIT = 10.2;
+
+function walkDirFromEvent(event) {
+  const code = String(event.code || '');
+  if (code === 'KeyW' || code === 'ArrowUp') return 'w';
+  if (code === 'KeyS' || code === 'ArrowDown') return 's';
+  if (code === 'KeyA' || code === 'ArrowLeft') return 'a';
+  if (code === 'KeyD' || code === 'ArrowRight') return 'd';
+  const key = String(event.key || '').toLowerCase();
+  if (key === 'w' || key === 'ц') return 'w';
+  if (key === 's' || key === 'ы') return 's';
+  if (key === 'a' || key === 'ф') return 'a';
+  if (key === 'd' || key === 'в') return 'd';
+  if (key === 'arrowup') return 'w';
+  if (key === 'arrowdown') return 's';
+  if (key === 'arrowleft') return 'a';
+  if (key === 'arrowright') return 'd';
+  return '';
+}
 
 export class SpatialScene {
   constructor(canvas, callbacks = {}) {
@@ -9,12 +28,12 @@ export class SpatialScene {
     this.callbacks = callbacks;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x090e17);
-    this.scene.fog = new THREE.Fog(0x090e17, 6, 14);
+    this.scene.fog = new THREE.Fog(0x090e17, 18, 42);
 
-    this.camera = new THREE.PerspectiveCamera(48, 1, 0.05, 30);
-    this.camera.position.set(0, 1.6, 5.2);
+    this.camera = new THREE.PerspectiveCamera(48, 1, 0.05, 80);
+    this.camera.position.set(0.35, 1.55, 4.4);
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -25,13 +44,14 @@ export class SpatialScene {
     this.renderer.xr.setReferenceSpaceType('local-floor');
 
     canvas.style.touchAction = 'none';
+    canvas.tabIndex = 0;
     this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.target.set(0, 0.95, 0);
+    this.controls.target.set(1.1, 0.95, 0.2);
     this.controls.enableDamping = true;
     this.controls.enablePan = true;
     this.controls.screenSpacePanning = true;
     this.controls.minDistance = 2.2;
-    this.controls.maxDistance = 8.0;
+    this.controls.maxDistance = 28.0;
     this.controls.maxPolarAngle = Math.PI * 0.52;
     this.controls.touches.ONE = THREE.TOUCH.ROTATE;
     this.controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
@@ -44,6 +64,20 @@ export class SpatialScene {
     this.lastFocusCheck = 0;
     this.highlightTimeouts = new Map();
     this.isXR = false;
+    this.walkMode = false;
+    this.walkKeys = new Set();
+    this.walkYaw = 0;
+    this.walkPitch = 0;
+    this.walkSaved = null;
+    this.walkLookHeld = false;
+    this.walkLockTap = 0;
+    this.stereoGlasses = false;
+    this.vr180View = null;
+    this.companionFollow = true;
+    this.spaceTravel = false;
+    this.lookFrozen = false;
+    this.onTravelTick = null;
+    this.onTravelAction = null;
 
     this.deviceState = {
       resetPressed: false,
@@ -51,10 +85,14 @@ export class SpatialScene {
       lastActivatedTarget: null,
     };
 
+    const params = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+    this.keepService = params.get('service') === '1';
+    this.serviceHidden = !this.keepService;
+
     this.#buildLighting();
     this.#buildEnvironment();
     this.#buildAvatar();
-    this.#buildDevice();
+    if (this.keepService) this.#buildDevice();
     this.#wireEvents();
     this.#resize();
     this.renderer.setAnimationLoop((time) => this.#animate(time));
@@ -71,15 +109,50 @@ export class SpatialScene {
   }
 
   #buildLighting() {
-    this.scene.add(new THREE.HemisphereLight(0xaedcff, 0x10131c, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 4.2);
-    key.position.set(3, 6, 4);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    this.scene.add(key);
-    const rim = new THREE.PointLight(0x41baff, 20, 8, 2);
-    rim.position.set(-2.7, 2.4, 0.4);
-    this.scene.add(rim);
+    this.hemiLight = new THREE.HemisphereLight(0xaedcff, 0x10131c, 2.2);
+    this.scene.add(this.hemiLight);
+    this.keyLight = new THREE.DirectionalLight(0xffffff, 4.2);
+    this.keyLight.position.set(6, 10, 7);
+    this.keyLight.castShadow = true;
+    this.keyLight.shadow.mapSize.set(1024, 1024);
+    this.scene.add(this.keyLight);
+    this.rimLight = new THREE.PointLight(0x41baff, 28, 22, 2);
+    this.rimLight.position.set(-4, 3.2, 2);
+    this.scene.add(this.rimLight);
+  }
+
+  enableSpaceTravel() {
+    this.spaceTravel = true;
+    this.companionFollow = false;
+    this.camera.near = 0.12;
+    this.camera.far = 1400;
+    this.camera.fov = 58;
+    this.camera.updateProjectionMatrix();
+    this.scene.background = new THREE.Color(0x0a1424);
+    this.scene.fog = new THREE.FogExp2(0x0a1424, 0.0024);
+    if (this.environmentGroup) this.environmentGroup.visible = false;
+    if (this.avatar) this.avatar.visible = false;
+    if (this.body) this.body.visible = false;
+    if (this.controls) this.controls.enabled = false;
+    if (this.hemiLight) {
+      this.hemiLight.color.setHex(0xb9cce4);
+      this.hemiLight.groundColor.setHex(0x1c160e);
+      this.hemiLight.intensity = 0.85;
+    }
+    if (this.keyLight) {
+      this.keyLight.color.setHex(0xffe2b0);
+      this.keyLight.intensity = 1.45;
+      this.keyLight.position.set(48, 90, 22);
+      this.keyLight.castShadow = false;
+    }
+    if (this.rimLight) {
+      this.rimLight.color.setHex(0x7ea3c8);
+      this.rimLight.intensity = 6;
+      this.rimLight.distance = 220;
+      this.rimLight.decay = 1.4;
+      this.rimLight.position.set(-30, 18, -40);
+    }
+    this.renderer.toneMappingExposure = 0.92;
   }
 
   #buildEnvironment() {
@@ -87,16 +160,16 @@ export class SpatialScene {
     this.scene.add(this.environmentGroup);
 
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(5.3, 64),
+      new THREE.PlaneGeometry(24, 24),
       this.#material(0x151d2a, { roughness: 0.93 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.environmentGroup.add(floor);
 
-    const grid = new THREE.GridHelper(8, 16, 0x285777, 0x172533);
+    const grid = new THREE.GridHelper(24, 24, 0x285777, 0x172533);
     grid.position.y = 0.006;
-    grid.material.opacity = 0.28;
+    grid.material.opacity = 0.22;
     grid.material.transparent = true;
     this.environmentGroup.add(grid);
 
@@ -111,8 +184,9 @@ export class SpatialScene {
 
   #buildAvatar() {
     this.avatar = new THREE.Group();
-    this.avatar.position.set(-1.35, 0, -0.1);
+    this.avatar.position.set(1.1, 0, 0.25);
     this.avatarHome = this.avatar.position.clone();
+    this.avatarGroundY = 0;
     this.scene.add(this.avatar);
 
     const bodyMat = this.#material(0x263e57, { metalness: 0.62, roughness: 0.28 });
@@ -327,32 +401,280 @@ export class SpatialScene {
     let down = null;
     this.canvas.addEventListener('pointerdown', (event) => {
       down = { x: event.clientX, y: event.clientY, id: event.pointerId };
+      if (this.walkMode && event.button === 0) this.walkLookHeld = true;
     });
     this.canvas.addEventListener('pointercancel', () => {
       down = null;
+      this.walkLookHeld = false;
     });
     this.canvas.addEventListener('pointerup', (event) => {
+      this.walkLookHeld = false;
       if (!down || down.id !== event.pointerId) return;
       const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
       down = null;
+      if (this.walkMode) {
+        if (moved <= 10) {
+          const now = performance.now();
+          if (now - this.walkLockTap < 340) this.canvas.requestPointerLock?.();
+          this.walkLockTap = now;
+        }
+        return;
+      }
       if (moved > 10) return;
       const id = this.#pickAt(event.clientX, event.clientY);
       if (!id) return;
       void this.activateTarget(id, 'tap');
     });
+    this.#bindWalk();
+  }
+
+  #typingTarget(el) {
+    const tag = String(el?.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || Boolean(el?.isContentEditable);
+  }
+
+  #bindWalk() {
+    const onKey = (event, down) => {
+      // Desktop VR view uses walkMode; headset XR keeps its own locomotion.
+      if (!this.walkMode || this.isXR) return;
+      if (event.code === 'Escape' && down) {
+        if (document.pointerLockElement === this.canvas) {
+          document.exitPointerLock?.();
+          return;
+        }
+        if (!this.companionFollow) return;
+        this.setWalkMode(false);
+        return;
+      }
+      if (this.companionFollow && down && event.code === 'KeyR') {
+        event.preventDefault();
+        void window.__novaTvStage?.toggleSession?.();
+        return;
+      }
+      if (this.companionFollow && down && event.code === 'KeyT') {
+        event.preventDefault();
+        if (!this.walkMode) return;
+        this.setStereoGlasses(!this.stereoGlasses);
+        return;
+      }
+      if (this.spaceTravel && !this.#typingTarget(event.target)) {
+        if (event.code === 'Space') {
+          event.preventDefault();
+          if (down) this.walkKeys.add('up');
+          else this.walkKeys.delete('up');
+          return;
+        }
+        if (event.code === 'ShiftLeft' || event.code === 'ShiftRight' || event.code === 'KeyC') {
+          event.preventDefault();
+          if (down) this.walkKeys.add('down');
+          else this.walkKeys.delete('down');
+          return;
+        }
+        if (down && (event.code === 'KeyE' || event.code === 'KeyF')) {
+          event.preventDefault();
+          this.onTravelAction?.('land');
+          return;
+        }
+      }
+      const walk = walkDirFromEvent(event);
+      if (!walk) return;
+      if (this.#typingTarget(event.target)) return;
+      event.preventDefault();
+      if (down) this.walkKeys.add(walk);
+      else this.walkKeys.delete(walk);
+    };
+    window.addEventListener('keydown', (event) => onKey(event, true), true);
+    window.addEventListener('keyup', (event) => onKey(event, false), true);
+    document.addEventListener('mousemove', (event) => {
+      if (!this.walkMode || this.isXR) return;
+      const locked = document.pointerLockElement === this.canvas;
+      const overCanvas = event.target === this.canvas
+        || event.target?.id === 'scene'
+        || Boolean(event.target?.closest?.('#app-shell canvas'));
+      // Steer while locked, LMB-drag, or cursor over the 3D view.
+      if (!locked && !this.walkLookHeld && !overCanvas) return;
+      const dx = event.movementX || 0;
+      const dy = event.movementY || 0;
+      if (!dx && !dy) return;
+      this.walkYaw -= dx * 0.0024;
+      this.walkPitch = THREE.MathUtils.clamp(this.walkPitch - dy * 0.0024, -1.15, 1.15);
+      if (!this.lookFrozen) this.#applyWalkLook();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      if (!this.walkMode) return;
+      const locked = document.pointerLockElement === this.canvas;
+      document.documentElement.classList.toggle('walk-looking', locked);
+      window.dispatchEvent(new CustomEvent('nova:pointer-lock', { detail: { locked } }));
+    });
+  }
+
+  #applyWalkLook() {
+    this.camera.rotation.order = 'YXZ';
+    this.camera.rotation.y = this.walkYaw;
+    this.camera.rotation.x = this.walkPitch;
+    this.camera.rotation.z = 0;
+  }
+
+  #updateWalk(delta) {
+    if (typeof this.onTravelTick === 'function') {
+      this.onTravelTick(delta);
+      return;
+    }
+    const forward = (this.walkKeys.has('w') || this.walkKeys.has('arrowup') ? 1 : 0)
+      - (this.walkKeys.has('s') || this.walkKeys.has('arrowdown') ? 1 : 0);
+    const strafe = (this.walkKeys.has('d') || this.walkKeys.has('arrowright') ? 1 : 0)
+      - (this.walkKeys.has('a') || this.walkKeys.has('arrowleft') ? 1 : 0);
+    if (!forward && !strafe) return;
+    const speed = 3.2 * delta;
+    const sin = Math.sin(this.walkYaw);
+    const cos = Math.cos(this.walkYaw);
+    this.camera.position.x += (-sin * forward + cos * strafe) * speed;
+    this.camera.position.z += (-cos * forward - sin * strafe) * speed;
+    this.camera.position.x = THREE.MathUtils.clamp(this.camera.position.x, -WALK_LIMIT, WALK_LIMIT);
+    this.camera.position.z = THREE.MathUtils.clamp(this.camera.position.z, -WALK_LIMIT, WALK_LIMIT);
+    this.camera.position.y = 1.58;
+  }
+
+  #pinWorld() {
+    const stage = this.scene.getObjectByName('nova_cinematic_stage');
+    if (stage && stage.parent !== this.scene) {
+      this.scene.attach(stage);
+      stage.position.set(0, 0, 0);
+      stage.rotation.set(0, 0, 0);
+      stage.scale.set(1, 1, 1);
+    }
+    if (window.__novaHumanoidReady && this.body) this.body.visible = false;
+  }
+
+  #stepActor(delta) {
+    if (!this.companionFollow) return;
+    if (!this.avatar || !this.walkMode || this.isXR) return;
+    if (window.__novaCinematicDirector?.running) return;
+    this.#pinWorld();
+    const yaw = this.walkYaw;
+    const followX = this.camera.position.x - Math.sin(yaw) * 1.2 + Math.cos(yaw) * 0.55;
+    const followZ = this.camera.position.z - Math.cos(yaw) * 1.2 - Math.sin(yaw) * 0.55;
+    const tx = THREE.MathUtils.clamp(followX, -WALK_LIMIT + 0.4, WALK_LIMIT - 0.4);
+    const tz = THREE.MathUtils.clamp(followZ, -WALK_LIMIT + 0.4, WALK_LIMIT - 0.4);
+    const dx = tx - this.avatar.position.x;
+    const dz = tz - this.avatar.position.z;
+    const dist = Math.hypot(dx, dz);
+    const playerMoving = this.walkKeys.size > 0;
+    const needWalk = dist > (playerMoving ? 2.3 : 4.2);
+    if (!needWalk) {
+      if (this.avatarState === 'moving') this.setState('idle');
+      return;
+    }
+    const speed = 1.45 * delta;
+    const step = Math.min(1, speed / Math.max(dist, 0.001));
+    this.avatar.position.x += dx * step;
+    this.avatar.position.z += dz * step;
+    // Keep planet standing height (cinematic sets avatarGroundY).
+    this.avatar.position.y = Number.isFinite(this.avatarGroundY) ? this.avatarGroundY : 0;
+    if (dist > 0.05) this.avatar.rotation.y = Math.atan2(dx, dz);
+    this.setState('moving');
+  }
+
+  placeActorBesideViewer() {
+    return Boolean(this.avatar);
+  }
+
+  setWalkMode(enabled) {
+    const next = Boolean(enabled);
+    if (next === this.walkMode) {
+      if (next && this.companionFollow) this.placeActorBesideViewer();
+      return this.walkMode;
+    }
+    this.walkMode = next;
+    this.walkKeys.clear();
+    document.documentElement.classList.toggle('walk-mode', next);
+    if (next) {
+      this.walkSaved = {
+        position: this.camera.position.clone(),
+        target: this.controls.target.clone(),
+        fov: this.camera.fov,
+        far: this.camera.far,
+      };
+      this.controls.enabled = false;
+      this.camera.fov = this.spaceTravel ? 58 : 72;
+      this.camera.far = this.spaceTravel ? 1400 : Math.max(this.camera.far, 80);
+      if (!this.spaceTravel) {
+        this.camera.position.set(0.12, 1.58, 2.35);
+        this.walkYaw = 0;
+        this.walkPitch = -0.06;
+        this.#applyWalkLook();
+      }
+      this.camera.updateProjectionMatrix();
+      if (this.companionFollow) this.placeActorBesideViewer();
+      const typing = document.activeElement;
+      if (typing && typing !== this.canvas && this.#typingTarget(typing) && typing.id !== 'cinematic-hero') {
+        typing.blur();
+      }
+      this.canvas.focus({ preventScroll: true });
+      if (this.companionFollow) {
+        try { this.canvas.requestPointerLock?.(); } catch {}
+      }
+    } else {
+      document.exitPointerLock?.();
+      this.controls.enabled = true;
+      if (this.walkSaved) {
+        this.camera.position.copy(this.walkSaved.position);
+        this.controls.target.copy(this.walkSaved.target);
+        this.camera.fov = this.walkSaved.fov;
+        this.camera.far = this.walkSaved.far;
+        this.camera.rotation.set(0, 0, 0);
+        this.camera.updateProjectionMatrix();
+        this.controls.update();
+      }
+      this.walkSaved = null;
+      this.setStereoGlasses(false);
+    }
+    window.dispatchEvent(new CustomEvent('nova:walk-mode', { detail: { enabled: next } }));
+    return this.walkMode;
+  }
+
+  setStereoGlasses(enabled) {
+    const next = Boolean(enabled) && this.walkMode;
+    if (next === this.stereoGlasses) return this.stereoGlasses;
+    this.stereoGlasses = next;
+    this.vr180View = next ? { canon: true } : null;
+    document.documentElement.classList.toggle('vr-glasses', next);
+    try { window.__novaVR180?.setStageView?.(next); } catch (error) {
+      console.warn('VR180 stage view:', error);
+    }
+    if (!next) {
+      this.renderer.setViewport(0, 0, this.renderer.domElement.width, this.renderer.domElement.height);
+      this.renderer.setScissorTest(false);
+    }
+    window.dispatchEvent(new CustomEvent('nova:stereo-glasses', { detail: { enabled: next } }));
+    return this.stereoGlasses;
+  }
+
+  #renderView() {
+    if (this.stereoGlasses && this.walkMode && !this.isXR) {
+      this.renderer.setScissorTest(false);
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.clear();
+      return;
+    }
+    this.renderer.setScissorTest(false);
+    this.renderer.render(this.scene, this.camera);
   }
 
   async activateTarget(id, source = 'tap') {
     if (!this.targets.has(id)) return { ok: false, error: 'unknown_target', targetId: id };
+    if (!this.keepService && ['device', 'red_button', 'filter'].includes(id)) {
+      return { ok: false, error: 'service_path_disabled', targetId: id };
+    }
 
     this.focusId = id;
     this.deviceState.lastActivatedTarget = id;
     this.callbacks.onFocusChanged?.(id, this.getSceneContext());
 
     let result;
-    if (id === 'red_button') {
+    if (this.keepService && id === 'red_button') {
       result = await this.executeTool('press_button', { targetId: 'red_button', source });
-    } else if (id === 'filter') {
+    } else if (this.keepService && id === 'filter') {
       result = await this.executeTool('remove_filter', { targetId: 'filter', source });
     } else {
       result = { ok: true, action: 'select', targetId: id };
@@ -387,10 +709,11 @@ export class SpatialScene {
         const id = hit.object?.userData?.targetId;
         if (id) found.add(id);
       }
-      if (found.has('red_button')) return 'red_button';
+      if (this.keepService && found.has('red_button')) return 'red_button';
     }
 
-    return TARGET_PRIORITY.find((id) => found.has(id)) ?? null;
+    if (!this.keepService) return [...found][0] ?? null;
+    return TARGET_PRIORITY.find((id) => found.has(id)) ?? [...found][0] ?? null;
   }
 
   #resize() {
@@ -403,21 +726,25 @@ export class SpatialScene {
 
   #animate(time) {
     const delta = Math.min(this.clock.getDelta(), 0.05);
-    if (!this.isXR) this.controls.update();
-
-    this.body.position.y = 0.87 + Math.sin(time * 0.0018) * 0.025;
-    if (this.avatarState === 'speaking') {
-      this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
-      this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
-      this.rightEye.scale.copy(this.leftEye.scale);
-    } else {
-      this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+    if (this.walkMode && !this.isXR) {
+      this.#updateWalk(delta);
+      this.#stepActor(delta);
+    } else if (!this.isXR) this.controls.update();
+    this.#pinWorld();
+    if (this.avatar?.visible && this.body?.visible) {
+      this.body.position.y = 0.87 + Math.sin(time * 0.0018) * 0.025;
+      if (this.avatarState === 'speaking') {
+        this.mouth.scale.y = 1 + Math.abs(Math.sin(time * 0.025)) * 3.2;
+        this.leftEye.scale.setScalar(1 + Math.sin(time * 0.006) * 0.04);
+        this.rightEye.scale.copy(this.leftEye.scale);
+      } else {
+        this.mouth.scale.y = THREE.MathUtils.lerp(this.mouth.scale.y, 1, delta * 8);
+      }
+      this.#updateHead(delta);
+      this.#updateArm(delta);
     }
-
-    this.#updateHead(delta);
-    this.#updateArm(delta);
     this.#updateFocus(time);
-    this.renderer.render(this.scene, this.camera);
+    this.#renderView();
   }
 
   #updateHead(delta) {
@@ -490,6 +817,14 @@ export class SpatialScene {
     return 'reset_required';
   }
 
+  hideServiceRig() {
+    this.serviceHidden = true;
+    if (this.device) this.device.visible = false;
+    this.environmentGroup?.children?.forEach((child, index) => {
+      if (index > 0) child.visible = false;
+    });
+  }
+
   getViewerWorldPosition() {
     if (this.renderer.xr.isPresenting) {
       return this.renderer.xr.getCamera(this.camera).getWorldPosition(new THREE.Vector3());
@@ -499,19 +834,32 @@ export class SpatialScene {
 
   getSceneContext() {
     const viewer = this.getViewerWorldPosition();
+    const serviceIds = new Set(['device', 'red_button', 'filter']);
+    const livePos = (target) => target.mesh?.getWorldPosition?.(new THREE.Vector3()) || target.position;
+    const visibleTargets = [...this.targets.values()]
+      .filter((target) => {
+        if (String(target.id).startsWith('__') || target.internal) return false;
+        if (this.serviceHidden && serviceIds.has(target.id)) return false;
+        if (target.mesh && target.mesh.visible === false) return false;
+        return true;
+      })
+      .map((target) => {
+        const position = livePos(target);
+        return {
+          id: target.id,
+          label: target.label,
+          dynamic: Boolean(target.dynamic),
+          distance: position ? Number(viewer.distanceTo(position).toFixed(2)) : null,
+        };
+      })
+      .sort((a, b) => Number(b.dynamic) - Number(a.dynamic));
     return {
-      gazeTarget: this.focusId,
-      visibleTargets: [...this.targets.values()].map((target) => ({
-        id: target.id,
-        label: target.label,
-        distance: Number(viewer.distanceTo(target.position).toFixed(2)),
-      })),
-      task: { name: 'service_device', step: this.#taskStep() },
-      deviceState: {
-        resetPressed: this.deviceState.resetPressed,
-        filterRemoved: this.deviceState.filterRemoved,
-        lastActivatedTarget: this.deviceState.lastActivatedTarget,
-      },
+      gazeTarget: this.serviceHidden && serviceIds.has(this.focusId) ? null : this.focusId,
+      visibleTargets,
+      objects: visibleTargets,
+      task: this.keepService
+        ? { name: 'service_device', step: this.#taskStep() }
+        : { name: 'cinematic_actor', step: 'perform' },
     };
   }
 
@@ -531,18 +879,13 @@ export class SpatialScene {
       case 'look_at':
         if (!id) return { ok: false, error: 'target_required' };
         this.lookTarget = id;
-        this.setState('looking');
-        setTimeout(() => this.setState('idle'), 900);
+        if (this.avatarState !== 'moving' && this.avatarState !== 'speaking') this.setState('looking');
         return { ok: true, action: name, targetId: id };
       case 'point_at':
         if (!id) return { ok: false, error: 'target_required' };
         this.lookTarget = id;
         this.pointTarget = id;
-        this.setState('pointing');
-        setTimeout(() => {
-          this.pointTarget = null;
-          this.setState('idle');
-        }, 2800);
+        if (this.avatarState !== 'moving' && this.avatarState !== 'speaking') this.setState('pointing');
         return { ok: true, action: name, targetId: id };
       case 'highlight':
         if (!id) return { ok: false, error: 'target_required' };
@@ -555,12 +898,13 @@ export class SpatialScene {
       case 'face_user':
         this.lookTarget = null;
         this.pointTarget = null;
-        this.setState('looking');
-        setTimeout(() => this.setState('idle'), 700);
+        if (this.avatarState !== 'moving' && this.avatarState !== 'speaking') this.setState('looking');
         return { ok: true, action: name };
       case 'press_button':
+        if (!this.keepService) return { ok: false, error: 'service_path_disabled', action: name };
         return this.pressButton(id || 'red_button');
       case 'remove_filter':
+        if (!this.keepService) return { ok: false, error: 'service_path_disabled', action: name };
         return this.removeFilter(id || 'filter');
       default:
         return { ok: false, error: 'tool_not_allowed', action: name };
@@ -716,7 +1060,7 @@ export class SpatialScene {
     const destination = target.position.clone();
     destination.x -= 0.9;
     destination.z += 0.3;
-    destination.y = 0;
+    destination.y = Number.isFinite(this.avatarGroundY) ? this.avatarGroundY : 0;
 
     return new Promise((resolve) => {
       const start = this.avatar.position.clone();

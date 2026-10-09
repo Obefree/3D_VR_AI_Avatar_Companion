@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#070b12" />
-    <title>Spatial AI Companion</title>
+    <title>Nova — TV Stage</title>
     <link rel="stylesheet" href="./styles.css" />
     <script type="importmap">
       {
@@ -17,67 +17,15 @@
   </head>
   <body>
     <div id="app-shell">
-      <canvas id="scene"></canvas>
+      <canvas id="scene" tabindex="0"></canvas>
       <div id="crosshair" aria-hidden="true"></div>
-
-      <header class="topbar glass">
-        <div>
-          <div class="eyebrow">SPATIAL AI COMPANION</div>
-          <h1>Nova — embodied humanoid AI for games, VR and AR</h1>
-        </div>
-        <div class="status-row">
-          <span id="mode-pill" class="pill">Agent mode</span>
-          <span id="connection-pill" class="pill muted">Starting</span>
-        </div>
-      </header>
-
-      <section class="controls glass">
-        <div class="button-row">
-          <button id="live-button" class="primary" type="button">AI starting…</button>
-          <button id="voice-demo-button" type="button">Talk to Nova</button>
-          <button id="demo-button" type="button">Run guided demo</button>
-          <button id="xr-button" class="hidden" type="button">Enter XR</button>
-        </div>
-        <p class="hint">Talk naturally to Nova. She can answer, look, gesture, move through the 3D space and manipulate scene objects.</p>
-        <div class="prompt-row">
-          <input id="text-input" type="text" autocomplete="off" placeholder="Try: Raise your left hand or create a blue cube" />
-          <button id="send-button" type="button">Send</button>
-        </div>
-        <div class="quick-prompts">
-          <button type="button" data-prompt="Подними левую руку">Подними левую руку</button>
-          <button type="button" data-prompt="Что находится вокруг тебя?">Что вокруг тебя?</button>
-          <button type="button" data-prompt="Создай синий куб перед собой">Создай синий куб</button>
-        </div>
-      </section>
-
-      <aside class="dev-panel glass">
-        <div class="panel-title">Agent state</div>
-        <dl>
-          <div><dt>State</dt><dd id="agent-state">idle</dd></div>
-          <div><dt>Focus</dt><dd id="focus-target">none</dd></div>
-          <div><dt>Visible</dt><dd id="visible-targets">device, red_button, filter</dd></div>
-          <div><dt>Last tool</dt><dd id="last-tool">—</dd></div>
-          <div><dt>Transport</dt><dd id="transport-state">starting</dd></div>
-        </dl>
-      </aside>
-
-      <section class="transcript glass" aria-live="polite">
-        <div class="panel-title">Conversation</div>
-        <div id="messages"></div>
-      </section>
-
       <div id="toast" role="status"></div>
     </div>
 
     <script src="./src/runtime-config.js"></script>
-    <script src="./src/groq-auth.js"></script>
-    <script src="./src/app.js"></script>
     <script src="./src/embodiment.js"></script>
     <script src="./src/humanoid-avatar.js"></script>
-    <script src="./src/xr-controls.js"></script>
-    <script type="module" src="./src/cinematic-director.js"></script>
     <script type="module" src="./src/vr180-recorder.js"></script>
-    <script src="./src/actor-polish.js"></script>
-    <script src="./src/presentation-mode.js"></script>
+    <script type="module" src="./src/stage-app.js"></script>
   </body>
 </html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a1424" />
+    <title>Маленький принц</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app-shell">
+      <canvas id="scene" tabindex="0"></canvas>
+      <div id="crosshair" aria-hidden="true"></div>
+      <div id="toast" role="status"></div>
+    </div>
+    <script src="./src/runtime-config.js"></script>
+    <script type="module" src="./src/stage-app.js"></script>
+  </body>
+</html>

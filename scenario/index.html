@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Мастерская сценария — Nova</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin:0; font: 15px/1.45 system-ui, sans-serif; background:#0b1018; color:#e8eef6; }
+      header { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid #243044; background:#101826; }
+      header h1 { margin:0; font-size:16px; font-weight:650; }
+      header a { color:#9ec1ff; }
+      .wrap { display:grid; grid-template-columns: 1.1fr 0.9fr; min-height: calc(100vh - 56px); }
+      .col { padding:16px; }
+      .col + .col { border-left:1px solid #243044; }
+      textarea, input, select { width:100%; background:#151d2a; color:#e8eef6; border:1px solid #31425a; border-radius:8px; padding:8px 10px; font:inherit; }
+      #source { min-height: 42vh; resize:vertical; }
+      .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+      button, .btn { border:1px solid #3d5270; background:#1b2a3f; color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font:inherit; }
+      button.primary { background:#2d6cdf; border-color:#2d6cdf; }
+      button.danger { background:#5a2a2a; border-color:#8a4040; }
+      .hint { color:#8fa3bb; font-size:13px; margin:8px 0 0; }
+      .roster { display:flex; flex-direction:column; gap:6px; max-height: 28vh; overflow:auto; }
+      .card { text-align:left; padding:8px; border:1px solid #31425a; border-radius:8px; background:#151d2a; cursor:pointer; }
+      .card.active { border-color:#6ea2ff; background:#1a2c48; }
+      .card strong { display:block; }
+      .meta { color:#8fa3bb; font-size:12px; }
+      .fields { display:grid; gap:8px; margin-top:12px; }
+      label { display:block; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#8fa3bb; margin-bottom:4px; }
+      #status { min-height:1.4em; color:#c5d4e6; }
+      @media (max-width: 900px) { .wrap { grid-template-columns:1fr; } .col + .col { border-left:0; border-top:1px solid #243044; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Мастерская сценария</h1>
+      <a href="/">назад в VR</a>
+    </header>
+    <div class="wrap">
+      <div class="col">
+        <p class="hint">Текст отдельно от 3D. Разбор даёт карточки ролей и комнату под них (лес, замок, планеты — не одна квартира на всех). Потом «В VR».</p>
+        <textarea id="source" placeholder="Вставь главу или сцену…"></textarea>
+        <div class="row">
+          <input id="file" type="file" accept=".txt,.md,.text,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+          <button id="parse" class="primary" type="button">Разобрать</button>
+          <button id="add" type="button">Добавить лицо</button>
+        </div>
+        <p id="status"></p>
+        <div id="roster" class="roster"></div>
+      </div>
+      <div class="col">
+        <div class="row">
+          <button id="to-vr" class="primary" type="button">В VR с этим пакетом</button>
+          <button id="download" type="button">Скачать JSON</button>
+          <button id="remove" class="danger" type="button">Убрать карточку</button>
+        </div>
+        <div id="fields" class="fields"></div>
+      </div>
+    </div>
+    <script type="module" src="./workbench.js?v=20260917-parse"></script>
+  </body>
+</html>

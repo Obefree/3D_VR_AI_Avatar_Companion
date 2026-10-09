@@ -35,6 +35,10 @@
   window.__NOVA_AI_ENDPOINT = aiEndpoint;
   if (isGroqEndpoint) window.__NOVA_GROQ_PROXY = groqProxy;
 
+  const serviceDemo = params.get('service') === '1';
+  document.documentElement.classList.toggle('tz-cinematic', !serviceDemo);
+  document.documentElement.classList.toggle('service-demo', serviceDemo);
+
   window.__NovaRuntimeConfig = {
     ...existing,
     mode: resolvedMode,
@@ -43,5 +47,7 @@
     serverManaged,
     transport: isGroqEndpoint ? 'supabase-groq' : 'local-api',
     endpoints: ENDPOINTS,
+    serviceDemo,
+    cinematicTz: !serviceDemo,
   };
 })();

@@ -67,7 +67,7 @@ try {
     };
   });
 
-  assert.equal(result.afterConfigure.maxDistance, 14, 'max orbit distance was not expanded');
+  assert.equal(result.afterConfigure.maxDistance, 28, 'max orbit distance was not expanded');
   assert.ok(result.afterConfigure.minDistance <= 1.8, 'minimum orbit distance was not relaxed');
   assert.ok(result.afterConfigure.far >= 50, 'camera far plane was not expanded');
   assert.ok(result.afterConfigure.projectionUpdates >= 1, 'camera projection was not updated');

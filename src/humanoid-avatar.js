@@ -36,11 +36,6 @@
     return null;
   }
 
-  function firstBoneChild(bone) {
-    if (!bone) return null;
-    return bone.children.find((child) => child?.isBone) || null;
-  }
-
   function resolveRig(root) {
     const allBones = [];
     root.traverse((obj) => { if (obj?.isBone) allBones.push(obj); });
@@ -51,10 +46,10 @@
       spine: findBone(allBones, ['spine2', 'spine1', 'chest', 'upperchest', 'mixamorigSpine2', 'mixamorigSpine1']),
       leftUpperArm: findBone(allBones, ['upperarm_l', 'leftarm', 'leftupperarm', 'mixamorigLeftArm']),
       leftLowerArm: findBone(allBones, ['lowerarm_l', 'leftforearm', 'leftlowerarm', 'mixamorigLeftForeArm']),
-      leftHand: findBone(allBones, ['hand_l', 'lefthand', 'mixamorigLeftHand']),
+      leftHand: findBone(allBones, ['wristl', 'hand_l', 'lefthand', 'lefthand', 'mixamorigLeftHand']),
       rightUpperArm: findBone(allBones, ['upperarm_r', 'rightarm', 'rightupperarm', 'mixamorigRightArm']),
       rightLowerArm: findBone(allBones, ['lowerarm_r', 'rightforearm', 'rightlowerarm', 'mixamorigRightForeArm']),
-      rightHand: findBone(allBones, ['hand_r', 'righthand', 'mixamorigRightHand']),
+      rightHand: findBone(allBones, ['wristr', 'hand_r', 'righthand', 'mixamorigRightHand']),
     };
     for (const [key, bone] of Object.entries(rig)) {
       if (!bone) continue;
@@ -72,14 +67,21 @@
   function playClip(kind) {
     if (!state.mixer || !state.clips.length) return;
     let clip = null;
-    if (kind === 'moving') clip = chooseClip(/walk|walking|run|jog/i);
-    else if (kind === 'wave') clip = chooseClip(/wave|hello|greet/i);
-    else clip = chooseClip(/idle|stand|breath/i) || state.clips[0];
-    if (!clip || state.activeClip === clip.name) return;
+    if (kind === 'wave') clip = chooseClip(/\|Wave$/i) || chooseClip(/wave/i);
+    else if (kind === 'interact') clip = chooseClip(/\|Interact$/i) || chooseClip(/interact/i);
+    else if (kind === 'moving') clip = chooseClip(/\|Walk$/i) || chooseClip(/walk/i) || chooseClip(/run/i);
+    else clip = chooseClip(/\|Idle$/i) || chooseClip(/Idle_Neutral/i) || chooseClip(/idle/i) || state.clips[0];
+    if (!clip) return;
     const previous = state.activeClip ? state.mixer.existingAction(state.clips.find((item) => item.name === state.activeClip)) : null;
     const next = state.mixer.clipAction(clip);
-    next.reset().setLoop(state.THREE.LoopRepeat, Infinity).fadeIn(0.22).play();
-    previous?.fadeOut?.(0.22);
+    if (state.activeClip === clip.name) {
+      if (kind === 'wave' && !next.isRunning()) next.reset().play();
+      return;
+    }
+    const loopOnce = kind === 'wave' || kind === 'interact';
+    next.reset().setLoop(loopOnce ? state.THREE.LoopOnce : state.THREE.LoopRepeat, loopOnce ? 1 : Infinity).fadeIn(0.18).play();
+    if (loopOnce) next.clampWhenFinished = true;
+    previous?.fadeOut?.(0.18);
     state.activeClip = clip.name;
   }
 
@@ -87,56 +89,11 @@
     return state.scene.avatar.getWorldQuaternion(new state.THREE.Quaternion());
   }
 
-  function aimBone(bone, child, desiredWorldDirection, amount = 0.88) {
-    if (!bone || !child || !bone.parent || !desiredWorldDirection?.lengthSq?.()) return false;
-    const rest = bone.userData.novaRestQuaternion;
-    if (!rest) return false;
-    const parentInv = bone.parent.getWorldQuaternion(new state.THREE.Quaternion()).invert();
-    const desiredLocal = desiredWorldDirection.clone().applyQuaternion(parentInv).normalize();
-    const restDirection = child.position.clone().normalize().applyQuaternion(rest).normalize();
-    if (restDirection.lengthSq() < 0.001) return false;
-    const delta = new state.THREE.Quaternion().setFromUnitVectors(restDirection, desiredLocal);
-    const target = delta.multiply(rest.clone());
-    bone.quaternion.slerp(target, amount);
-    return true;
-  }
-
-  function poseDirection(side, now, waving = false) {
-    const x = side === 'left' ? -0.42 : 0.42;
-    const local = new state.THREE.Vector3(x, 0.88, 0.18);
-    if (waving) local.x += Math.sin(now * 0.014) * (side === 'left' ? -0.23 : 0.23);
-    return local.normalize().applyQuaternion(avatarWorldQuaternion()).normalize();
-  }
-
   function targetWorldPosition(id) {
     const target = id && state.scene.targets?.get(id);
     if (!target) return null;
     if (target.position?.isVector3) return target.position.clone();
     return target.mesh?.getWorldPosition?.(new state.THREE.Vector3()) || null;
-  }
-
-  function updateArms(now) {
-    const pose = window.__novaEmbodiment?.getPose?.() || {};
-    const rig = state.bones;
-    const leftChild = rig.leftLowerArm || firstBoneChild(rig.leftUpperArm);
-    const rightChild = rig.rightLowerArm || firstBoneChild(rig.rightUpperArm);
-
-    if (pose.leftArm === 'raised' || pose.leftArm === 'waving') {
-      aimBone(rig.leftUpperArm, leftChild, poseDirection('left', now, pose.leftArm === 'waving'));
-    }
-
-    const point = targetWorldPosition(state.scene.pointTarget);
-    if (point && rig.rightUpperArm) {
-      const shoulder = rig.rightUpperArm.getWorldPosition(new state.THREE.Vector3());
-      aimBone(rig.rightUpperArm, rightChild, point.sub(shoulder).normalize(), 0.94);
-    } else if (pose.rightArm === 'raised' || pose.rightArm === 'waving') {
-      aimBone(rig.rightUpperArm, rightChild, poseDirection('right', now, pose.rightArm === 'waving'));
-    }
-
-    if (state.scene.avatarState === 'speaking' && !point && pose.leftArm !== 'raised' && pose.leftArm !== 'waving' && pose.rightArm !== 'raised' && pose.rightArm !== 'waving') {
-      const local = new state.THREE.Vector3(0.34 + Math.sin(now * 0.004) * 0.08, 0.18 + Math.sin(now * 0.006) * 0.06, 0.9).normalize();
-      aimBone(rig.rightUpperArm, rightChild, local.applyQuaternion(avatarWorldQuaternion()), 0.22);
-    }
   }
 
   function updateHead(now) {
@@ -174,6 +131,113 @@
     return { x: Number(p.x.toFixed(3)), y: Number(p.y.toFixed(3)), z: Number(p.z.toFixed(3)) };
   }
 
+  function stripLookOverlays(root) {
+    if (!root) return;
+    for (const name of ['LeelooLook', 'LeelooStraps']) {
+      const item = root.getObjectByName(name);
+      item?.parent?.remove(item);
+    }
+  }
+
+  function tintFromName(name, salt = 0) {
+    let hash = salt;
+    for (const ch of String(name || 'actor')) hash = ((hash * 33) + ch.charCodeAt(0)) >>> 0;
+    const h = hash % 360;
+    const s = 0.42 + ((hash % 28) / 100);
+    const l = 0.38 + (((hash >> 8) % 22) / 100);
+    const color = new state.THREE.Color().setHSL(h / 360, s, l);
+    return `#${color.getHexString()}`;
+  }
+
+  function tintMaterial(mat, hex) {
+    if (!mat?.color) return mat;
+    const copy = mat.userData?.novaTinted ? mat : mat.clone();
+    copy.userData.novaTinted = true;
+    if (!copy.userData.novaBaseHex) copy.userData.novaBaseHex = `#${mat.color.getHexString()}`;
+    copy.color.set(hex);
+    copy.needsUpdate = true;
+    return copy;
+  }
+
+  function replaceMat(obj, index, hex) {
+    if (Array.isArray(obj.material)) {
+      const next = obj.material.slice();
+      next[index] = tintMaterial(next[index], hex);
+      obj.material = next;
+      return;
+    }
+    obj.material = tintMaterial(obj.material, hex);
+  }
+
+  function matLuma(mat) {
+    const hex = mat?.userData?.novaBaseHex;
+    const color = hex ? new state.THREE.Color(hex) : mat?.color;
+    if (!color) return 0.5;
+    return (0.299 * color.r) + (0.587 * color.g) + (0.114 * color.b);
+  }
+
+  function lookOf(character) {
+    const look = character?.appearance && typeof character.appearance === 'object' ? character.appearance : {};
+    const blob = [character?.name, character?.role, character?.species, look.notes].join(' ').toLowerCase();
+    const presets = [
+      { test: /принц|prince/, hair: '#f0d48a', skin: '#f0c4a0', clothes: '#4a6eb5', height: 1.36 },
+      { test: /лис|fox/, hair: '#e07028', skin: '#e8a070', clothes: '#7a3e14', height: 1.42 },
+      { test: /роз|rose/, hair: '#e04560', skin: '#f3cfc0', clothes: '#f4ece4', height: 1.50 },
+      { test: /корол|king/, hair: '#e4d4a8', skin: '#e8c4a0', clothes: '#9a7428', height: 1.80 },
+      { test: /фонар|lamp/, hair: '#2c2c2a', skin: '#d4b090', clothes: '#3d4c5c', height: 1.60 },
+      { test: /лётчик|пилот|pilot/, hair: '#3a3028', skin: '#d8b090', clothes: '#243038', height: 1.74 },
+      { test: /мара|mara/, hair: '#1a1a1c', skin: '#e8b89a', clothes: '#2a3c52', height: 1.68 },
+    ];
+    const hit = presets.find((row) => row.test.test(blob));
+    return {
+      hair: look.hair || hit?.hair || tintFromName(character?.name, 11),
+      skin: look.skin || hit?.skin || '#e8b89a',
+      clothes: look.clothes || hit?.clothes || tintFromName(character?.name, 77),
+      heightMeters: Number(look.heightMeters) || hit?.height || 1.68,
+    };
+  }
+
+  function applyCharacter(character) {
+    if (!state.root || !state.THREE) return false;
+    stripLookOverlays(state.root);
+    if (state.scene?.body) state.scene.body.visible = false;
+    const look = lookOf(character);
+    const slots = [];
+    state.root.traverse((obj) => {
+      if (!obj?.isMesh && !obj?.isSkinnedMesh) return;
+      const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+      list.forEach((mat, index) => {
+        if (!mat?.color) return;
+        slots.push({ obj, index, mat, name: `${obj.name} ${mat.name || ''}`.toLowerCase() });
+      });
+    });
+    const painted = new Set();
+    const paintNamed = (re, hex) => {
+      for (const slot of slots) {
+        const key = `${slot.obj.uuid}:${slot.index}`;
+        if (painted.has(key) || !re.test(slot.name)) continue;
+        replaceMat(slot.obj, slot.index, hex);
+        painted.add(key);
+      }
+    };
+    paintNamed(/hair|scalp|bang|brow/, look.hair);
+    paintNamed(/cloth|dress|shirt|pant|outfit|strap|top|suit|coat|jacket/, look.clothes);
+    const rest = slots.filter((slot) => !painted.has(`${slot.obj.uuid}:${slot.index}`));
+    rest.sort((a, b) => matLuma(a.mat) - matLuma(b.mat));
+    const n = rest.length;
+    for (let i = 0; i < n; i += 1) {
+      const hex = i < n / 3 ? look.hair : (i > (2 * n) / 3 ? look.skin : look.clothes);
+      replaceMat(rest[i].obj, rest[i].index, hex);
+    }
+    const height = look.heightMeters;
+    if (Number.isFinite(height) && height > 1.2 && height < 2.2 && state.baseUniform) {
+      const factor = height / (state.fitHeight || TARGET_HEIGHT);
+      state.root.scale.setScalar(state.baseUniform * factor);
+      state.root.updateMatrixWorld?.(true);
+    }
+    return true;
+  }
+
   function wrapContext() {
     if (state.contextWrapped || !state.scene?.getSceneContext) return;
     const original = state.scene.getSceneContext.bind(state.scene);
@@ -192,12 +256,13 @@
         ...context,
         avatar: {
           ...avatar,
-          id: 'nova',
+          id: state.scene.actorName || 'nova',
+          name: state.scene.actorName || 'Nova',
           form: 'anthropomorphic humanoid woman',
           model: MODEL_NAME,
           modelReady: true,
           bodyParts,
-          supportedEmbodiedActions: ['look_at','point_at','move_near','raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object'],
+          supportedEmbodiedActions: ['look_at','point_at','walk_to','pick_up','sit','stand','raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object'],
         },
       };
     };
@@ -256,6 +321,8 @@
       if (!Number.isFinite(initialSize.y) || initialSize.y <= 0.01) throw new Error('invalid_model_bounds');
       const scale = TARGET_HEIGHT / initialSize.y;
       root.scale.multiplyScalar(scale);
+      state.baseUniform = scale;
+      state.fitHeight = TARGET_HEIGHT;
       root.updateMatrixWorld(true);
       box = new THREE.Box3().setFromObject(root);
       const center = box.getCenter(new THREE.Vector3());
@@ -276,6 +343,8 @@
       wrapContext();
       window.__novaHumanoidReady = true;
       document.documentElement.dataset.novaAvatar = 'humanoid';
+      window.__novaHumanoid?.applyCharacter?.(window.__novaTvStage?.character || window.__novaCinematicDirector?.character);
+      window.dispatchEvent(new CustomEvent('nova:humanoid-ready'));
       console.info('Nova humanoid ready', publicState());
       return true;
     } catch (error) {
@@ -289,22 +358,29 @@
     }
   }
 
+  function clipKindFromPose() {
+    const pose = window.__novaEmbodiment?.getPose?.() || {};
+    const waving = pose.leftArm === 'waving' || pose.rightArm === 'waving';
+    if (state.scene.avatarState === 'moving') return 'moving';
+    if (state.scene.avatarState === 'acting') return 'interact';
+    if (waving) return 'wave';
+    return 'idle';
+  }
+
   function frame(now) {
     requestAnimationFrame(frame);
     if (!state.ready || !state.scene) return;
     const delta = Math.min(0.05, Math.max(0, (now - state.lastFrame) / 1000));
     state.lastFrame = now;
-    const pose = window.__novaEmbodiment?.getPose?.() || {};
-    const shouldWave = pose.leftArm === 'waving' || pose.rightArm === 'waving';
-    playClip(state.scene.avatarState === 'moving' ? 'moving' : shouldWave ? 'wave' : 'idle');
+    const kind = clipKindFromPose();
+    playClip(kind);
     state.mixer?.update(delta);
-    updateHead(now);
-    updateArms(now);
+    if (kind !== 'moving') updateHead(now);
     updateMorphs(now);
   }
 
   async function boot() {
-    for (let i = 0; i < 160; i += 1) {
+    for (let i = 0; i < 400; i += 1) {
       if (window.__novaScene?.scene && window.__novaEmbodimentReady) break;
       await wait(50);
     }
@@ -316,6 +392,9 @@
     load: loadHumanoid,
     getState: publicState,
     getModelUrl: () => MODEL_URL,
+    applyCharacter,
+    play: playClip,
+    getBone: (part) => state.bones[part] || null,
   };
   window.addEventListener('DOMContentLoaded', () => {
     void boot();

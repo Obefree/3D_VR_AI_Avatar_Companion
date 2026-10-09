@@ -234,7 +234,7 @@ try {
   page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
-  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`http://127.0.0.1:${port}/?service=1`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__novaScene && window.__NovaApp, null, { timeout: 20000 });
   await page.waitForFunction(() => document.getElementById('transport-state')?.textContent === 'AI ready', null, { timeout: 10000 });
 

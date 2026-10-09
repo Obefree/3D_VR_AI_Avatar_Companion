@@ -1,5 +1,5 @@
 (() => {
-  const BUILTIN_TARGETS = new Set(['device', 'red_button', 'filter']);
+  const BUILTIN_TARGETS = new Set(['actor_window', 'actor_table', 'actor_chair', 'actor_glass', 'element_water', 'element_fire', 'element_earth', 'element_air']);
   const EXTENDED_ACTIONS = new Set([
     'raise_hand',
     'lower_hand',
@@ -14,10 +14,10 @@
   const DYNAMIC_SPATIAL_ACTIONS = new Set(['look_at', 'point_at', 'highlight', 'move_near']);
   const SPACE = {
     floorY: 0,
-    minX: -4.35,
-    maxX: 4.35,
-    minZ: -4.35,
-    maxZ: 4.35,
+    minX: -10.6,
+    maxX: 10.6,
+    minZ: -10.6,
+    maxZ: 10.6,
     maxY: 3.2,
   };
 
@@ -300,8 +300,8 @@
       return;
     }
     const direction = pose === 'raised'
-      ? new THREE.Vector3(-0.18, 0.92, -0.35).normalize()
-      : new THREE.Vector3(-0.45, 0.65, -0.6).normalize();
+      ? new THREE.Vector3(-0.35, 0.55, -0.55).normalize()
+      : new THREE.Vector3(-0.45, 0.2, -0.65).normalize();
     state.leftTarget = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), direction);
   }
 
@@ -338,7 +338,7 @@
     if (!target || state.pose.rightArm === 'down') return;
     const shoulder = state.scene.rightArm.root.getWorldPosition(new state.THREE.Vector3());
     const q = avatarQuaternion();
-    const up = new state.THREE.Vector3(0.15, 0.9, -0.35).applyQuaternion(q).normalize();
+    const up = new state.THREE.Vector3(0.35, 0.55, -0.55).applyQuaternion(q).normalize();
     if (state.pose.rightArm === 'waving') {
       up.x += Math.sin(now * 0.018) * 0.26;
       up.normalize();
@@ -351,7 +351,7 @@
     if (side === 'left') setLeftArmPose('raised');
     else setRightArmPose('raised');
     state.scene.setState('acting');
-    await sleep(650);
+    await sleep(280);
     state.scene.setState('idle');
     return { ok: true, action: 'raise_hand', side, pose: { ...state.pose } };
   }
@@ -362,14 +362,14 @@
     if (both || raw.startsWith('l') || raw.includes('лев')) setLeftArmPose('down');
     if (both || raw.startsWith('r') || raw.includes('прав')) setRightArmPose('down');
     state.scene.setState('acting');
-    await sleep(600);
+    await sleep(220);
     state.scene.setState('idle');
     return { ok: true, action: 'lower_hand', side: both ? 'both' : raw, pose: { ...state.pose } };
   }
 
   async function wave(args = {}) {
     const side = String(args.side || 'left').toLowerCase().startsWith('r') || String(args.side || '').toLowerCase().includes('прав') ? 'right' : 'left';
-    const duration = clamp(args.seconds ?? 2, 0.8, 4) * 1000;
+    const duration = clamp(args.seconds ?? 1.6, 0.45, 2.4) * 1000;
     state.scene.setState('acting');
     if (side === 'left') {
       setLeftArmPose('raised');
@@ -380,8 +380,8 @@
       setRightArmPose('waving');
     }
     await sleep(duration);
-    if (side === 'left') setLeftArmPose('raised');
-    else setRightArmPose('raised');
+    if (side === 'left') setLeftArmPose('down');
+    else setRightArmPose('down');
     state.scene.setState('idle');
     return { ok: true, action: 'wave', side };
   }
@@ -465,9 +465,13 @@
     const rightHand = state.scene.rightArm.hand.getWorldPosition(new state.THREE.Vector3());
     const head = state.scene.headPivot.getWorldPosition(new state.THREE.Vector3());
     const objects = [...state.scene.targets.values()]
-      .filter((target) => !target.internal && !String(target.id).startsWith('__'))
+      .filter((target) => {
+        if (target.internal || String(target.id).startsWith('__')) return false;
+        if (state.scene.serviceHidden && ['device', 'red_button', 'filter'].includes(target.id)) return false;
+        return true;
+      })
       .map((target) => {
-        const position = target.position?.clone?.() || target.mesh?.getWorldPosition?.(new state.THREE.Vector3()) || new state.THREE.Vector3();
+        const position = target.mesh?.getWorldPosition?.(new state.THREE.Vector3()) || target.position?.clone?.() || new state.THREE.Vector3();
         const distance = avatarPos.distanceTo(position);
         return {
           id: target.id,
@@ -544,7 +548,11 @@
   function updateVisiblePanel() {
     const el = document.getElementById('visible-targets');
     if (!el || !state.scene) return;
-    const ids = [...state.scene.targets.keys()].filter((id) => !String(id).startsWith('__'));
+    const ids = [...state.scene.targets.keys()].filter((id) => {
+      if (String(id).startsWith('__')) return false;
+      if (state.scene.serviceHidden && ['device', 'red_button', 'filter'].includes(id)) return false;
+      return true;
+    });
     el.textContent = ids.join(', ');
   }
 
@@ -589,7 +597,7 @@
     const originalGetContext = scene.getSceneContext.bind(scene);
     scene.getSceneContext = () => enrichedContext(originalGetContext);
     setLeftArmPose('down');
-    addStarterObjects();
+    if (scene.keepService) addStarterObjects();
     updateVisiblePanel();
     state.ready = true;
     window.__novaEmbodimentReady = true;
@@ -598,6 +606,9 @@
       createObject,
       deleteObject,
       moveObject,
+      clearDynamic: () => {
+        for (const id of [...state.dynamicIds]) deleteObject({ targetId: id });
+      },
       getContext: () => scene.getSceneContext(),
       getDynamicIds: () => [...state.dynamicIds],
       getPose: () => ({ ...state.pose }),

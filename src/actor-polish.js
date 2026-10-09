@@ -47,8 +47,8 @@
     const dx = point.x - origin.x;
     const dz = point.z - origin.z;
     if (Math.hypot(dx, dz) < 0.08) return false;
-    // Nova's local forward is -Z.
-    state.desiredYaw = Math.atan2(-dx, -dz);
+    // This Quaternius woman faces +Z (toward the desktop camera).
+    state.desiredYaw = Math.atan2(dx, dz);
     state.desiredUntil = performance.now() + holdMs;
     return true;
   }
@@ -56,7 +56,8 @@
   function actionTarget(detail) {
     const name = String(detail?.name || '');
     const args = detail?.args || {};
-    if (name === 'approach_user' || name === 'face_user' || name === 'speak') return viewerPosition();
+    if (name === 'approach_user' || name === 'face_user') return viewerPosition();
+    if (name === 'speak') return viewerPosition();
     if (['walk_to', 'pick_up', 'look_at', 'point_at'].includes(name)) return targetPosition(args.targetId);
     return null;
   }
@@ -95,7 +96,8 @@
       }
     }
     const speaking = scene()?.avatarState === 'speaking';
-    setNamedMorph(/smile|happy/, speaking ? 0.14 : 0);
+    const listening = scene()?.avatarState === 'listening';
+    setNamedMorph(/smile|happy/, speaking ? 0.12 : listening ? 0 : 0.04);
   }
 
   function frame(now) {
@@ -132,6 +134,9 @@
     state.ready = Boolean(window.__novaScene?.avatar);
     window.__novaActorPolish = {
       aimAt,
+      setPresence(character) {
+        return character || null;
+      },
       refreshMorphs: collectMorphMeshes,
       getState: () => ({
         ready: state.ready,

@@ -1,0 +1,28 @@
+---
+description: No stubs — if a control or feature is visible, it must work end-to-end
+alwaysApply: true
+---
+
+# No stubs / empty chrome
+
+If something is shown to the user (button, checkbox, mode, scenario, mic, record), it must be a **working path** — not a placeholder, dead wire, or half-hook.
+
+## Forbidden
+
+- Buttons that open nothing, log slogans, or promise a mode that is not wired
+- Checkboxes for recording/preview that produce empty/broken files while looking “on”
+- Scenario/role pickers that do not load a real pack and character sheet
+- Voice/mic UI without SpeechRecognition (or honest “недоступно в этом браузере”)
+- Reading system prompts / JSON schema / WANT/MISSION aloud as dialogue
+- Fake “success” when the actor did not act in the world
+
+## Required
+
+- One clear primary loop: live role ↔ viewer (text and/or mic) ↔ embodied action + speech
+- Ready packs that ship in UI must load worlds + roles that play
+- Recording: only offer modes that actually write usable media; prefer one solid path over two broken ones
+- If a capability is missing — hide the control or show a short honest reason (no fake enable)
+
+## Default
+
+Prefer deleting a half-button over shipping it “for later”.

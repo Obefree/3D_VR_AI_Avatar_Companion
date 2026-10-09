@@ -43,12 +43,35 @@
   };
 
   if (!active) {
-    window.__NOVA_AUTH_READY = Promise.resolve({ ...state });
+    const markLocal = () => {
+      const connection = document.getElementById('connection-pill');
+      const button = document.getElementById('live-button');
+      const mode = document.getElementById('mode-pill');
+      if (connection) {
+        connection.textContent = 'Ollama local';
+        connection.classList.remove('muted');
+      }
+      if (mode) mode.textContent = 'Local AI';
+      if (button) {
+        button.textContent = 'Local Ollama';
+        button.title = 'Сейчас локальная модель. Для Groq открой ?ai=user-groq и нажми снова.';
+      }
+    };
+    markLocal();
+    window.addEventListener('DOMContentLoaded', markLocal);
+    setTimeout(markLocal, 800);
+    window.__NOVA_AUTH_READY = Promise.resolve({ ...state, local: true });
     window.__NovaGroqAuth = {
-      connect() { return Promise.resolve(false); },
+      connect() {
+        try { sessionStorage.setItem('nova_autconnect_groq', '1'); } catch {}
+        const url = new URL(window.location.href);
+        url.searchParams.set('ai', 'user-groq');
+        window.location.href = url.toString();
+        return Promise.resolve(false);
+      },
       disconnect() { setKey(''); },
-      probe() { return Promise.resolve({ ...state }); },
-      getState() { return { ...state, keyPresent: Boolean(getKey()), serverManaged }; },
+      probe() { return Promise.resolve({ ...state, local: true }); },
+      getState() { return { ...state, keyPresent: Boolean(getKey()), serverManaged, local: true }; },
       getKeyForTesting() { return getKey(); },
     };
     return;

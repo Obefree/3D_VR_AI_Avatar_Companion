@@ -4,7 +4,10 @@
   const runtimeConfig = window.__NovaRuntimeConfig || {};
   const nativeFetch = window.fetch.bind(window);
   const AI_ENDPOINT = runtimeConfig.aiEndpoint || window.__NOVA_AI_ENDPOINT || './api/chat';
-  const BASE_ACTIONS = new Set(['look_at','point_at','highlight','move_near','press_button','remove_filter','face_user']);
+  const cinematicTz = runtimeConfig.cinematicTz !== false && !runtimeConfig.serviceDemo;
+  const BASE_ACTIONS = cinematicTz
+    ? new Set(['look_at','point_at','face_user'])
+    : new Set(['look_at','point_at','highlight','move_near','press_button','remove_filter','face_user']);
   const EXTENDED_ACTIONS = new Set(['raise_hand','lower_hand','wave','step','turn_body','neutral_pose','create_object','delete_object','move_object']);
   const DYNAMIC_SPATIAL_ACTIONS = new Set(['look_at','point_at','highlight','move_near']);
 
@@ -65,23 +68,21 @@
 
   function createFallbackScene() {
     const labels = new Map([
-      ['device', 'service device'],
-      ['red_button', 'red reset button'],
-      ['filter', 'replaceable filter'],
+      ['actor_window', 'Window'],
+      ['actor_table', 'Small table'],
+      ['actor_chair', 'Chair'],
+      ['actor_glass', 'Glass'],
     ]);
-    const deviceState = { resetPressed: false, filterRemoved: false, lastActivatedTarget: null };
-    const taskStep = () => deviceState.filterRemoved ? 'complete' : deviceState.resetPressed ? 'filter_required' : 'reset_required';
     return {
       isFallback: true,
-      focusId: 'device',
+      focusId: null,
       avatarState: 'idle',
       targets: new Map([...labels].map(([id, label]) => [id, { id, label }])),
       getSceneContext() {
         return {
           gazeTarget: this.focusId,
           visibleTargets: [...labels].map(([id, label]) => ({ id, label, distance: null })),
-          task: { name: 'service_device', step: taskStep() },
-          deviceState: { ...deviceState },
+          task: { name: 'cinematic_actor', step: 'perform' },
         };
       },
       setState(state) { this.avatarState = state; setText('agent-state', state); },
@@ -89,16 +90,7 @@
         const targetId = args.targetId || '';
         if (targetId && !labels.has(targetId)) return { ok: false, error: 'unknown_target', targetId };
         if (targetId) this.focusId = targetId;
-        if (name === 'press_button') {
-          deviceState.resetPressed = true;
-          deviceState.lastActivatedTarget = 'red_button';
-        }
-        if (name === 'remove_filter') {
-          if (!deviceState.resetPressed) return { ok: false, error: 'reset_required', targetId: 'filter' };
-          deviceState.filterRemoved = true;
-          deviceState.lastActivatedTarget = 'filter';
-        }
-        return { ok: true, action: name, targetId: targetId || undefined, taskStep: taskStep() };
+        return { ok: true, action: name, targetId: targetId || undefined };
       },
       async enterXR() { throw new Error('3D scene is not ready.'); },
     };
@@ -128,7 +120,7 @@
 
   async function speak(text) {
     if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-      await wait(Math.min(1300, 200 + text.length * 7));
+      await wait(Math.min(700, 120 + text.length * 5));
       return;
     }
     await new Promise((resolve) => {
@@ -136,15 +128,18 @@
       const finish = () => { if (!done) { done = true; resolve(); } };
       try {
         window.speechSynthesis.cancel();
+        window.speechSynthesis.resume?.();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = /[А-Яа-яЁё]/.test(text) ? 'ru-RU' : locale();
-        utterance.rate = 1.03;
-        utterance.pitch = 1.05;
-        utterance.volume = 0.9;
+        utterance.rate = 1.18;
+        utterance.pitch = 1.04;
+        const want = utterance.lang.slice(0, 2).toLowerCase();
+        const voice = (window.speechSynthesis.getVoices() || []).find((item) => item.lang?.toLowerCase().startsWith(want));
+        if (voice) utterance.voice = voice;
         utterance.onend = finish;
         utterance.onerror = finish;
         window.speechSynthesis.speak(utterance);
-        setTimeout(finish, Math.min(9000, 1000 + text.length * 50));
+        setTimeout(finish, Math.min(5200, 280 + Math.round(text.length * 58)));
       } catch { finish(); }
     });
   }
@@ -231,7 +226,7 @@
         phase,
         locale: locale(),
       }),
-    }, 3, 16000);
+    }, 2, 55000);
     if (!data?.ok || !data?.text) throw new Error(data?.error || 'Invalid AI response');
     return {
       text: String(data.text).trim(),
@@ -284,6 +279,10 @@
       return embodiment.execute(action);
     }
 
+    if (window.__novaCinematicDirector?.execute) {
+      return window.__novaCinematicDirector.execute(action);
+    }
+
     return { ok: false, error: 'action_not_allowed', action: name };
   }
 
@@ -313,7 +312,7 @@
         phase: preExecutedResults.length ? 'after_tools' : 'initial',
       });
       let toolResults = await executeReplyActions(reply);
-      const failed = toolResults.filter(({ result }) => !result?.ok);
+      const failed = toolResults.filter(({ result }) => result?.error === 'reset_required');
       if (failed.length) {
         reply = await requestAI({ message: text, history, toolResults, phase: 'after_tools' });
         toolResults = await executeReplyActions(reply);
@@ -336,33 +335,13 @@
   }
 
   async function demoRespond(text, options = {}) {
-    const { alreadyRemembered = false, preExecutedResults = [] } = options;
+    const { alreadyRemembered = false } = options;
     if (!alreadyRemembered) remember('user', text, true);
     scene.setState?.('thinking');
     setText('transport-state', 'demo fallback');
     await wait(80);
-    const lower = String(text).toLowerCase();
-    const context = scene.getSceneContext?.() || {};
-    const failedReset = preExecutedResults.some((item) => item?.result?.error === 'reset_required');
-    if (failedReset) {
-      await scene.executeTool('look_at', { targetId: 'red_button' });
-      await scene.executeTool('point_at', { targetId: 'red_button' });
-      return say(isRussian() ? 'Сначала нужно нажать красную кнопку сброса.' : 'Press the red reset button first.', 'demo fallback');
-    }
-    if (context.task?.step === 'complete') return say(isRussian() ? 'Готово. Обслуживание завершено.' : 'Done. The task is complete.', 'demo fallback');
-    if (lower.includes('кноп') || lower.includes('button')) {
-      await scene.executeTool('look_at', { targetId: 'red_button' });
-      await scene.executeTool('point_at', { targetId: 'red_button' });
-      await scene.executeTool('highlight', { targetId: 'red_button', seconds: 2 });
-      return say(isRussian() ? 'Вот красная кнопка сброса.' : 'Here is the red reset button.', 'demo fallback');
-    }
-    if (lower.includes('фильтр') || lower.includes('filter') || lower.includes('дальш') || lower.includes('next')) {
-      await scene.executeTool('look_at', { targetId: 'filter' });
-      await scene.executeTool('point_at', { targetId: 'filter' });
-      return say(isRussian() ? 'Следующий объект — фильтр.' : 'The next object is the filter.', 'demo fallback');
-    }
     return say(
-      isRussian() ? 'AI сейчас недоступен. Я автоматически попробую подключиться снова со следующим сообщением.' : 'AI is unavailable right now. I will retry automatically on your next message.',
+      isRussian() ? 'AI сейчас недоступен. Сцену в комнате можно отыграть кнопкой Play scene.' : 'AI is unavailable. Play the room scene with Play scene.',
       'demo fallback',
     );
   }
@@ -385,6 +364,7 @@
   }
 
   async function handleTargetActivation(id, result) {
+    if (cinematicTz || scene.serviceHidden) return;
     let text;
     if (id === 'red_button') text = isRussian() ? 'Я нажал красную кнопку.' : 'I pressed the red button.';
     else if (id === 'filter' && result?.ok) text = isRussian() ? 'Я вынул фильтр.' : 'I removed the filter.';
@@ -397,11 +377,17 @@
   }
 
   async function runGuidedDemo() {
-    await scene.executeTool('move_near', { targetId: 'device' });
-    await scene.executeTool('look_at', { targetId: 'red_button' });
-    await scene.executeTool('point_at', { targetId: 'red_button' });
-    await scene.executeTool('highlight', { targetId: 'red_button', seconds: 2.5 });
-    await say(isRussian() ? 'Начнём с красной кнопки. Нажми её или попроси меня нажать.' : 'Start with the red button. Tap it or ask me to press it.', cloudAiReady ? 'AI ready' : 'demo fallback');
+    const director = window.__novaCinematicDirector;
+    const script = document.getElementById('cinematic-script')?.value;
+    if (director?.run && script) {
+      try {
+        await director.run(script, { preferAI: true });
+        return;
+      } catch (error) {
+        console.warn('Play scene failed:', error);
+      }
+    }
+    await say(isRussian() ? 'Открой панель актрисы внизу и нажми AI → Act.' : 'Use the actor panel at the bottom and press AI → Act.', cloudAiReady ? 'AI ready' : 'demo fallback');
   }
 
   function setVoiceButton(text) { const button = $('voice-demo-button'); if (button) button.textContent = text; }
@@ -487,6 +473,7 @@
   }
 
   function bindUI() {
+    if (cinematicTz) return;
     $('send-button')?.addEventListener('click', () => queueInteraction(() => sendPrompt($('text-input')?.value)));
     $('text-input')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') queueInteraction(() => sendPrompt(event.currentTarget.value));
@@ -511,11 +498,14 @@
   };
 
   bindUI();
-  remember('assistant', isRussian()
-    ? 'Привет. Я Nova. Говори или пиши — я буду понимать сцену и выполнять доступные действия.'
-    : 'Hi. I am Nova. Talk or type and I will understand the scene and perform available actions.', true);
+  if (!cinematicTz) {
+    remember('assistant', isRussian()
+      ? 'Привет. Я Nova. Говори или пиши — я буду понимать сцену и выполнять доступные действия.'
+      : 'Hi. I am Nova. Talk or type and I will understand the scene and perform available actions.', true);
+  }
   setText('transport-state', 'UI ready');
   setConnection('Connecting…', true);
   $('live-button') && ($('live-button').textContent = 'Connect Live AI');
-  detectCloudAI(false).finally(load3DScene);
+  void detectCloudAI(false);
+  void load3DScene();
 })();
